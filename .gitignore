@@ -1,0 +1,25 @@
+# Lưu trữ thông tin nhạy cảm (API Keys)
+.env
+
+# Các file rác của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Môi trường ảo (Virtual Environment)
+venv/
+env/
+.venv/
+
+# File cấu hình riêng của Streamlit
+.streamlit/config.toml
+# (Nếu bạn muốn chia sẻ màu sắc giao diện với team thì có thể bỏ dòng trên)
+
+# File rác của hệ điều hành
+.DS_Store
+Thumbs.db
+
+# Dữ liệu tạm thời
+data/*.csv
+data/*.json
+# (Lưu ý: Nếu bạn muốn đẩy dữ liệu mẫu lên để team chạy thử thì hãy xoá 2 dòng data trên)
