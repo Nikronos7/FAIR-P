@@ -28,11 +28,5 @@ PAGES = {
 
 # 3. Khởi tạo Điều hướng
 pg = st.navigation(PAGES)
-# 4. Trang trí Sidebar chuyên nghiệp
-with st.sidebar:
-    st.markdown("FAIR-P")
-    st.caption("AI-Assisted Self-Study App")
-    st.divider()
 
-# 5. Chạy ứng dụng
 pg.run()
