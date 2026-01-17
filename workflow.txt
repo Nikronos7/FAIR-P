@@ -1,0 +1,16 @@
+--------------------------------------------
+"kích hoạt môi trường ảo bằng terminal vs code"
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+.venv\Scripts\Activate.ps1
+--------------------------------------------
+"Đồng bộ từ github"
+git checkout main
+git pull origin main
+git checkout <nhánh-của-bạn>
+git merge main
+--------------------------------------------
+"Tải lên github"
+git status
+git add .
+git commit -m "mô tả việc đã làm"
+git push origin <nhánh-của-bạn>
