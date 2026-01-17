@@ -1,17 +1,47 @@
 import streamlit as st
+from logic.gemini_ai import chat_logic
 
+st.set_page_config(page_title="Cá Nhân", layout="wide")
 
-def show():  # <--- Bạn phải thêm dòng này
-    st.title("👤 Cá Nhân")
-    st.write("Chào mừng bạn đến với trang Cá Nhân của FAIR-P!")
+# 1. SIDEBAR: Lựa chọn tính năng
+# Vì bạn đã có các page, đoạn này sẽ tự động xuất hiện dưới danh sách page
+with st.sidebar:
+    # Dùng st.radio có sẵn của Streamlit, không cần import thêm
+    selected = st.sidebar.radio(
+        "Các mục điều hướng:",
+        ["Học tập", "Dashboard", "Tiến trình"],
+        index=0  # Mặc định là Học tập
+    )
 
-    # Ví dụ code xử lý ảnh
-    uploaded_file = st.file_uploader(
-        "Tải lên ảnh từ vựng của bạn", type=['png', 'jpg', 'jpeg'])
+# 2. PHÂN CHIA NỘI DUNG CHÍNH
+if selected == "Học tập":
 
-    if uploaded_file:
-        st.image(uploaded_file, caption="Ảnh đã tải lên")
-        # Logic AI sẽ viết ở đây...
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
+    # Sử dụng khung container để chia khu vực chat
+    chat_container = st.container(height=450, border=True)
 
-show()
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    if prompt := st.chat_input("Bạn muốn tìm hiểu gì?..."):
+        # Lưu và hiển thị ngay lập tức
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Gọi logic AI và hiển thị
+        response = chat_logic.get_response(prompt)
+        st.session_state.messages.append(
+            {"role": "assistant", "content": response})
+        st.rerun()
+
+elif selected == "Dashboard":
+    st.subheader("📊 Bảng điều khiển phân tích")
+    st.info("Bảng theo dõi tiến độ học tập.")
+
+elif selected == "Tiến trình":
+    st.subheader("📈 Theo dõi lộ trình cá nhân")
+    st.write("Tiến độ ôn tập:")
+    st.progress(60)
