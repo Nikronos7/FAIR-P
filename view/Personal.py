@@ -1,5 +1,5 @@
 import streamlit as st
-from logic.gemini_ai import chat_logic
+from logic.chatbot import chat_logic
 
 st.set_page_config(page_title="Cá Nhân", layout="wide")
 
