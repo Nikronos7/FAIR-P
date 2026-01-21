@@ -1,12 +1,13 @@
 import streamlit as st
 import plotly.graph_objects as go
 import datetime
+import pandas as pd
 
 # --- IMPORT LOGIC ---
 # 1. Chatbot: Để nói chuyện với Gemini
 from logic.chatbot import chat_logic
 # 2. Calculations: Để tính điểm sức khỏe
-from logic.calculations import calculate_readiness, get_ai_mode
+from logic.calculations import calculate_readiness, get_ai_mode, get_progress_data
 
 # --- HÀM VẼ RADAR CHART ---
 
@@ -50,6 +51,15 @@ def plot_radar_chart(data):
     return fig
 
 
+# --- TÍNH TOÁN TOÀN CỤC ---
+if 'user_data' in st.session_state:
+    data = st.session_state.user_data
+    readiness = calculate_readiness(data)
+    ai_mode_name, status_type, active_model_id = get_ai_mode(readiness)
+else:
+    st.warning("⚠️ Vui lòng cập nhật thông tin sức khỏe ở Sidebar!")
+    st.stop()
+
 # 1. SIDEBAR
 with st.sidebar:
     selected = st.radio(
@@ -57,7 +67,6 @@ with st.sidebar:
         ["Học tập", "Dashboard", "Tiến trình"],
         index=1  # Mặc định vào Dashboard
     )
-
 # 2. NỘI DUNG TỪNG TRANG
 
 # ==================================================
@@ -82,26 +91,13 @@ if selected == "Học tập":
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(prompt)
-
-        # Lấy model dựa trên sức khỏe hiện tại
-        # Nếu chưa có dữ liệu sức khỏe, mặc định dùng Flash
-        if 'user_data' in st.session_state:
-            r_score = calculate_readiness(st.session_state.user_data)
-            _, _, active_model_id = get_ai_mode(r_score)
-        else:
-            active_model_id = "models/gemini-2.5-flash"
-
-        with chat_container:
             with st.chat_message("assistant"):
-                # Hiển thị model đang dùng để bạn biết
+                # Dùng biến global
                 st.caption(f"🚀 Đang sử dụng: {active_model_id}")
-
                 with st.spinner("AI đang suy nghĩ..."):
-                    # --- TRUYỀN MODEL ID VÀO ĐÂY ---
                     response = chat_logic.get_response(
                         prompt, model_id=active_model_id)
                     st.markdown(response)
-
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================
@@ -109,40 +105,22 @@ if selected == "Học tập":
 # ==================================================
 elif selected == "Dashboard":
 
-    # Kiểm tra dữ liệu
+    # 1. Kiểm tra dữ liệu
     if 'user_data' not in st.session_state:
         st.warning("⚠️ Chưa có dữ liệu. Vui lòng cập nhật thông tin ở Sidebar!")
         st.stop()
 
     data = st.session_state.user_data
 
-    # 1. TÍNH TOÁN ĐIỂM SỐ
-    readiness = calculate_readiness(data)
-    ai_mode_name, status_type, current_model_id = get_ai_mode(readiness)
-
     # 2. HEADER: LỜI CHÀO & ĐIỂM SỐ
     head_col1, head_col2 = st.columns([2, 1])
 
     with head_col1:
-        current_hour = datetime.datetime.now().hour
-        greeting = "Chào buổi sáng" if 5 <= current_hour < 12 else "Chào buổi chiều" if 12 <= current_hour < 18 else "Chào buổi tối"
-
-        st.markdown(f"### {greeting}, Nikronos7! 👋")
-
-        if status_type == "success":
-            st.success(
-                f"🚀 **Sẵn sàng cao độ ({readiness}/100)**: Cơ thể bạn đang ở trạng thái tốt nhất!")
-        elif status_type == "info":
-            st.info(
-                f"⚖️ **Ổn định ({readiness}/100)**: Trạng thái cân bằng, phù hợp để ôn tập.")
-        else:
-            st.warning(
-                f"🔋 **Cần nạp năng lượng ({readiness}/100)**: Hãy nghỉ ngơi chút nhé.")
-
+        st.markdown(f"### Chào Nikronos7! 👋")
+        st.info(f"Trạng thái: {ai_mode_name}")
     with head_col2:
-        st.metric("Năng lượng học tập",
-                  f"{readiness}/100", delta=f"AI: {ai_mode_name}")
-        st.progress(readiness / 100)
+        st.metric("Readiness", f"{readiness}%")
+        st.progress(readiness/100)
 
     st.divider()
 
@@ -177,13 +155,121 @@ elif selected == "Dashboard":
             ex_score = data.get('exercise_score', 0)
             st.metric("Vận động", f"{ex_score}/2.0 đ")
 
-    st.divider()
     st.info("💡 **Mẹo:** Cập nhật các chỉ số ở Sidebar bên trái để thấy biểu đồ thay đổi theo thời gian thực!")
+    st.divider()
+    st.subheader("🎓 Bảng Điểm Chi Tiết Học Kỳ")
+
+    # 1. Khởi tạo dữ liệu mẫu (Chỉ chạy 1 lần đầu)
+    if 'grade_data' not in st.session_state:
+        subjects = ["Toán học", "Ngữ văn", "Tiếng Anh",
+                    "Vật lý", "Hóa học", "Tin học"]
+        df_grades = pd.DataFrame({
+            "STT": range(1, len(subjects) + 1),
+            "Môn học": subjects,
+            "TX 1": [0.0]*6, "TX 2": [0.0]*6, "TX 3": [0.0]*6, "TX 4": [0.0]*6,
+            "Giữa kì": [0.0]*6,
+            "Cuối kì": [0.0]*6,
+            "Trung bình": [0.0]*6
+        })
+        st.session_state.grade_data = df_grades
+
+    # --- FIX LỖI NHẢY DÒNG: Luôn ép bảng xếp theo STT 1-6 trước khi vẽ ---
+    # Việc này giúp hàng không bị tụt xuống dưới khi điểm trung bình thay đổi
+    st.session_state.grade_data = st.session_state.grade_data.sort_values(
+        "STT")
+
+    # 2. Cấu hình cột điểm (Giới hạn 0-10)
+    score_config = st.column_config.NumberColumn(
+        min_value=0.0,
+        max_value=10.0,
+        step=0.1,
+        format="%.2f",
+        width="small"
+    )
+
+    # 3. Hiển thị bảng nhập liệu
+    # Dùng key cố định để Streamlit không làm mất dữ liệu khi chuyển tab
+    edited_df = st.data_editor(
+        st.session_state.grade_data,
+        column_config={
+            "STT": st.column_config.NumberColumn(width="small", disabled=True),
+            "Môn học": st.column_config.TextColumn(width="medium", disabled=True),
+            "TX 1": score_config,
+            "TX 2": score_config,
+            "TX 3": score_config,
+            "TX 4": score_config,
+            "Giữa kì": score_config,
+            "Cuối kì": score_config,
+            "Trung bình": st.column_config.NumberColumn(format="%.2f", disabled=True, width="small")
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="grade_editor_dynamic"
+    )
+
+    # 4. Logic tính toán và Đồng bộ hóa (Sync)
+    # Kiểm tra nếu dữ liệu trên bảng khác với dữ liệu trong máy thì mới xử lý
+    if not edited_df.equals(st.session_state.grade_data):
+        for index, row in edited_df.iterrows():
+            # Lấy tất cả các cột điểm
+            all_scores = [row["TX 1"], row["TX 2"], row["TX 3"],
+                          row["TX 4"], row["Giữa kì"], row["Cuối kì"]]
+            # Chỉ tính những ô có điểm (> 0)
+            valid_scores = [s for s in all_scores if s > 0]
+
+            new_avg = sum(valid_scores) / \
+                len(valid_scores) if valid_scores else 0.0
+            edited_df.at[index, "Trung bình"] = new_avg
+
+        # Lưu lại vào máy và làm mới giao diện ngay lập tức
+        st.session_state.grade_data = edited_df
+        st.rerun()
+
+    # 5. Hiển thị Metric tổng kết
+    avg_series = st.session_state.grade_data[st.session_state.grade_data["Trung bình"] > 0]["Trung bình"]
+    final_gpa = avg_series.mean() if not avg_series.empty else 0.0
+    st.metric("Điểm trung bình học kỳ (Dự kiến)", f"{final_gpa:.2f}")
 
 # ==================================================
 # TRANG 3: TIẾN TRÌNH
 # ==================================================
 elif selected == "Tiến trình":
-    st.subheader("📈 Theo dõi lộ trình")
-    st.progress(60)
-    st.write("Tính năng đang phát triển...")
+    st.header("📈 Lộ Trình Phát Triển Cá Nhân")
+
+    # Lấy dữ liệu từ file CSV
+    history_df = get_progress_data()
+
+    if history_df is None:
+        # Nếu chưa có file, dùng dữ liệu giả lập để demo
+        history_df = pd.DataFrame({
+            "Ngày": ["18/01", "19/01", "20/01", "21/01"],
+            "Readiness": [70, 85, 60, readiness]
+        })
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.subheader("Biểu đồ Năng lượng")
+        # Sử dụng Plotly cho biểu đồ đường để đồng bộ với Radar Chart
+        fig_line = go.Figure()
+        fig_line.add_trace(go.Scatter(
+            x=history_df['Ngày'], y=history_df['Readiness'], mode='lines+markers', line_color='#00CC96'))
+        fig_line.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    with col2:
+        st.subheader("🏆 Thành tích")
+        st.success("🔥 5 ngày học tập liên tiếp")
+        st.info(f"💧 Nước đạt: {data['water_consumed']}L")
+
+    st.divider()
+    st.subheader("🎯 Mục tiêu dài hạn")
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        st.write("**IELTS Target: 7.5**")
+        st.progress(0.7, text="70% hoàn thành")
+    with t2:
+        st.write("**SAT Target: 1500+**")
+        st.progress(0.4, text="Giai đoạn chuẩn bị")
+    with t3:
+        st.write("**AP Calculus BC Target: 4+/5**")
+        st.progress(0.1, text="Giai đoạn làm quen")
