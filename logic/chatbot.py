@@ -32,10 +32,19 @@ class ChatBotLogic:
         for current_model in unique_pool:
             try:
                 response = self.client.models.generate_content(
-                    model=current_model,
+                    model=model_id,
                     contents=prompt
                 )
-                return response.text
+                text_output = response.text
+
+                # --- BƯỚC LÀM SẠCH (CLEANUP) ---
+                # Xóa các thẻ HTML/Markdown lỗi như <blockquote> hoặc </blockquote>
+                forbidden_tags = ["<blockquote>",
+                                  "</blockquote>", "<br>", "</div>"]
+                for tag in forbidden_tags:
+                    text_output = text_output.replace(tag, "")
+
+                return text_output.strip()  # .strip() để xóa khoảng trắng thừa ở đầu/cuối
 
             except Exception as e:
                 err_msg = str(e)

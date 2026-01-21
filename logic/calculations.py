@@ -1,3 +1,8 @@
+import pandas as pd
+from datetime import datetime
+import os
+
+
 def calculate_readiness(data):
     """
     Tính chỉ số Sẵn sàng Học tập (Readiness Score) dựa trên công thức:
@@ -50,3 +55,34 @@ def get_ai_mode(readiness_score):
     else:
         # Model nhẹ nhàng cho lúc mệt
         return "Gemini Flash Lite (Supportive)", "warning", "models/gemini-flash-lite-latest"
+
+
+def save_daily_progress(score):
+    # Lưu vào thư mục data/User_Data như trong ảnh thư mục của bạn
+    folder_path = 'data/User_Data'
+    file_path = f'{folder_path}/progress_log.csv'
+
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+    new_entry = pd.DataFrame(
+        [[datetime.now().strftime('%d/%m'), score]], columns=['Ngày', 'Readiness'])
+
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+        # Nếu hôm nay đã có điểm rồi thì cập nhật điểm mới nhất
+        if df.empty or df.iloc[-1]['Ngày'] != new_entry.iloc[0]['Ngày']:
+            df = pd.concat([df, new_entry], ignore_index=True)
+        else:
+            df.iloc[-1, 1] = score
+    else:
+        df = new_entry
+
+    df.to_csv(file_path, index=False)
+
+
+def get_progress_data():
+    file_path = 'data/User_Data/progress_log.csv'
+    if os.path.exists(file_path):
+        return pd.read_csv(file_path)
+    return None
