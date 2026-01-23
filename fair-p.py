@@ -1,6 +1,6 @@
 import streamlit as st
 from dotenv import load_dotenv
-from data.User_Data.User_data import verify_login
+from data.User_Data.User_data import verify_login, get_guest_data
 # 1. Khởi động cấu hình
 load_dotenv()
 
@@ -246,7 +246,7 @@ def render_login():
     with st.container(border=True):
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### Đăng nhập Leader")
+            st.markdown("### Đăng nhập")
             username = st.text_input(
                 "Tên đăng nhập", placeholder="nhập tên của bạn")
             password = st.text_input("Mật khẩu", type="password")
@@ -262,6 +262,8 @@ def render_login():
                     # Lưu thêm thông tin tài khoản để hiển thị tên
                     st.session_state.account_info = user_info.get(
                         'account', {})
+                    st.session_state.db_grades = user_info.get(
+                        'learning_results', {}).get('grades', [])
                     st.rerun()
                 else:
                     st.error("Sai thông tin đăng nhập!")
@@ -271,9 +273,13 @@ def render_login():
             st.info(
                 "Trải nghiệm nhanh các tính năng mà không cần lưu trữ dữ liệu lâu dài.")
             if st.button("👤 DÙNG THỬ (GUEST)", use_container_width=True):
+                # [FIX] Gọi hàm lấy dữ liệu Guest từ User_data.py
+                guest_data = get_guest_data()
                 st.session_state.is_logged_in = True
-                st.session_state.user_data = {}  # Guest bắt đầu với data trắng
-                st.session_state.account_info = {"username": "Guest"}
+                st.session_state.user_data = guest_data.get('daily_status', {})
+                st.session_state.account_info = guest_data.get('account', {})
+                st.session_state.db_grades = guest_data.get(
+                    'learning_results', {}).get('grades', [])
                 st.rerun()
 
 

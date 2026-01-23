@@ -1,6 +1,6 @@
 import hashlib
 
-# --- 1. CƠ SỞ DỮ LIỆU NỘI BỘ (INTERNAL DATABASE) ---
+# --- 1. CƠ SỞ DỮ LIỆU NỘI BỘ ---
 USERS_DB = {
     "nikronos7": {
         "account": {
@@ -24,12 +24,29 @@ USERS_DB = {
             "vnd_balance": 7000000,
             "fair_coin_balance": 1250,
             "current_tier": "Artisan (Premium)"
+        },
+        # [MỚI] Dữ liệu điểm số học kỳ
+        "learning_results": {
+            "grades": [
+                {"subject": "Toán học", "tx1": 9.5, "tx2": 9.8,
+                    "tx3": 9.0, "tx4": 9.5, "midterm": 9.6, "final": 0.0},
+                {"subject": "Ngữ văn", "tx1": 8.0, "tx2": 8.2,
+                    "tx3": 7.8, "tx4": 8.5, "midterm": 8.0, "final": 0.0},
+                {"subject": "Tiếng Anh", "tx1": 9.0, "tx2": 9.5,
+                    "tx3": 9.2, "tx4": 9.0, "midterm": 9.4, "final": 0.0},
+                {"subject": "Vật lý", "tx1": 9.0, "tx2": 9.2, "tx3": 8.8,
+                    "tx4": 9.5, "midterm": 9.1, "final": 0.0},
+                {"subject": "Hóa học", "tx1": 8.5, "tx2": 8.8,
+                    "tx3": 9.0, "tx4": 8.5, "midterm": 8.7, "final": 0.0},
+                {"subject": "Tin học", "tx1": 10.0, "tx2": 10.0,
+                    "tx3": 9.8, "tx4": 10.0, "midterm": 9.9, "final": 0.0}
+            ]
         }
     },
     "guest": {
         "account": {
             "username": "guest",
-            "password": "none",  # Khách không cần mật khẩu
+            "password": "none",
             "gmail": "guest.experience@fairp.io"
         },
         "general_settings": {
@@ -48,6 +65,23 @@ USERS_DB = {
             "vnd_balance": 50000,
             "fair_coin_balance": 10,
             "current_tier": "Standard Member"
+        },
+        # [MỚI] Dữ liệu điểm số khách (Demo)
+        "learning_results": {
+            "grades": [
+                {"subject": "Toán học", "tx1": 7.5, "tx2": 8.0,
+                    "tx3": 7.0, "tx4": 7.5, "midterm": 7.8, "final": 0.0},
+                {"subject": "Ngữ văn", "tx1": 7.0, "tx2": 7.5,
+                    "tx3": 7.2, "tx4": 7.0, "midterm": 7.3, "final": 0.0},
+                {"subject": "Tiếng Anh", "tx1": 6.5, "tx2": 7.0,
+                    "tx3": 6.8, "tx4": 7.0, "midterm": 6.9, "final": 0.0},
+                {"subject": "Vật lý", "tx1": 8.0, "tx2": 7.5, "tx3": 8.2,
+                    "tx4": 8.0, "midterm": 7.9, "final": 0.0},
+                {"subject": "Hóa học", "tx1": 7.0, "tx2": 7.2,
+                    "tx3": 7.0, "tx4": 7.5, "midterm": 7.1, "final": 0.0},
+                {"subject": "Tin học", "tx1": 8.5, "tx2": 9.0,
+                    "tx3": 8.8, "tx4": 9.0, "midterm": 8.9, "final": 0.0}
+            ]
         }
     }
 }
@@ -56,7 +90,6 @@ USERS_DB = {
 
 
 def verify_login(username, password):
-    """Kiểm tra đăng nhập từ USERS_DB"""
     u_key = username.lower().strip()
     if u_key in USERS_DB:
         hashed_input = hashlib.sha256(password.encode()).hexdigest()
@@ -67,5 +100,4 @@ def verify_login(username, password):
 
 
 def get_guest_data():
-    """Lấy dữ liệu khách ngay lập tức"""
     return USERS_DB["guest"]
