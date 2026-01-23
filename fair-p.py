@@ -1,6 +1,6 @@
 import streamlit as st
 from dotenv import load_dotenv
-
+from data.User_Data.User_data import verify_login, get_guest_data
 # 1. Khởi động cấu hình
 load_dotenv()
 
@@ -129,7 +129,11 @@ def show_exercise_dialog():
 
 
 def show_health_gate():
+    # --- Lấy tên người dùng ---
+
     st.title("🛡️ Cổng Kiểm Soát Sức Khỏe FAIR-P")
+    account_info = st.session_state.get('account_info', {})
+    display_name = account_info.get('username', 'Bạn')
 
     # --- ĐỊNH NGHĨA ĐIỂM SỐ VẬN ĐỘNG (Dùng cho tính toán AI sau này) ---
     level_to_score = {
@@ -154,7 +158,7 @@ def show_health_gate():
         # Nếu muốn nhớ chi tiết Ex_level cũ, cần lưu riêng biến, tạm thời để mặc định là Nhẹ
 
     st.info(
-        "Chào Nikronos7! Hãy cập nhật trạng thái để AI tối ưu hóa lộ trình học cho bạn.")
+        f"Chào {display_name}! Hãy cập nhật trạng thái để AI tối ưu hóa lộ trình học cho bạn.")
 
     with st.container(border=True):
         col1, col2 = st.columns(2)
@@ -213,7 +217,7 @@ def show_health_gate():
                     f"✨ FAIR-P giới hạn mức Stress tối đa dựa trên bài tập {ex_level}.")
 
         # Nút xác nhận
-        btn_label = "🚀 BẮT ĐẦU HỌC" if 'user_data' not in st.session_state else "✅ LƯU CẬP NHẬT"
+        btn_label = "✅ BẮT ĐẦU HỌC"
 
         if st.button(btn_label, use_container_width=True):
             # --- TÍNH TOÁN ĐIỂM SỐ VẬN ĐỘNG ---
@@ -234,76 +238,132 @@ def show_health_gate():
             st.balloons()
             st.rerun()
 
+# --- 5. GIAO DIỆN ĐĂNG NHẬP (MỚI THÊM) ---
 
-# --- LOGIC KHỞI TẠO ---
-if 'health_submitted' not in st.session_state:
-    st.session_state.health_submitted = False
 
-if not st.session_state.health_submitted:
-    show_health_gate()
+def render_login():
+    st.title("🛡️ FAIR-P SYSTEM ACCESS")
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Đăng nhập")
+            username = st.text_input(
+                "Tên đăng nhập", placeholder="nhập tên của bạn")
+            password = st.text_input("Mật khẩu", type="password")
 
-# --- GIAO DIỆN CHÍNH ---
-if st.session_state.health_submitted == True:
-    PAGES = {
-        "Học tập": [
-            st.Page("view/Personal.py", title="Cá Nhân",
-                    icon=":material/account_circle:"),
-            st.Page("view/Skills.py", title="Các kỹ năng",
-                    icon=":material/explore:"),
-        ],
-        "Hệ thống": [
-            st.Page("view/AboutUs.py", title="Về chúng tôi",
-                    icon=":material/groups:"),
-            st.Page("view/Setting.py", title="Cấu hình",
-                    icon=":material/settings:"),
-        ]
-    }
-    pg = st.navigation(PAGES)
-    pg.run()
+            if st.button("🚀 ĐĂNG NHẬP", type="primary", use_container_width=True):
+                success, user_info = verify_login(username, password)
+                if success:
+                    st.session_state.is_logged_in = True
+                    # [QUAN TRỌNG] Load dữ liệu cũ vào user_data để HealthGate hiển thị lại
+                    # Nếu user mới thì để rỗng để nhập từ đầu
+                    st.session_state.user_data = user_info.get(
+                        'daily_status', {})
+                    # Lưu thêm thông tin tài khoản để hiển thị tên
+                    st.session_state.account_info = user_info.get(
+                        'account', {})
+                    st.session_state.db_grades = user_info.get(
+                        'learning_results', {}).get('grades', [])
+                    st.rerun()
+                else:
+                    st.error("Sai thông tin đăng nhập!")
 
-    # --- SIDEBAR CẢI TIẾN ---
-    with st.sidebar:
-        st.divider()
-
-        # 1. LOGIC TOAST
-        if 'toast_msg' in st.session_state and st.session_state.toast_msg:
-            st.toast(st.session_state.toast_msg)
-            st.session_state.toast_msg = None
-
-        # 2. TRẠNG THÁI SỨC KHỎE
-        with st.expander("❤️ Trạng thái & Nước", expanded=False):
-            data = st.session_state.user_data
-
-            # Hiển thị Hydration
-            st.write(f"💧 Nước: **{data['water_consumed']:.2f} Lít**")
-            target_water = 3.0
-            progress = min(data['water_consumed'] / target_water, 1.0)
-            st.progress(progress)
-            if progress >= 1.0:
-                st.caption("✅ Đã đạt mục tiêu nước!")
-            else:
-                st.caption(
-                    f"Thiếu {(target_water - data['water_consumed']):.1f}L mục tiêu.")
-
-            st.divider()
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.write(f"🌙 Ngủ: **{data['sleep_hours']}h**")
-                st.caption(f"Q: {data['sleep_quality']}/6")
-            with col_b:
-                st.write(f"🧠 Stress: **{data['stress_score']}/3**")
-                st.caption(f"VĐ: {data['exercise_detail']}")
-
-            # Debug điểm số (ẩn đi khi chạy thật nếu muốn)
-            # st.caption(f"Score VĐ: {data.get('exercise_score', 0)}")
-
-            st.divider()
-
-            # Nút cộng nước
-            if st.button("➕ Uống thêm 250ml (0.25L)", use_container_width=True):
-                st.session_state.user_data['water_consumed'] += 0.25
-                st.session_state.toast_msg = "Đã nạp thêm 0.25L nước! 💧"
+        with col2:
+            st.markdown("### Khách truy cập")
+            st.info(
+                "Trải nghiệm nhanh các tính năng mà không cần lưu trữ dữ liệu lâu dài.")
+            if st.button("👤 DÙNG THỬ (GUEST)", use_container_width=True):
+                # [FIX] Gọi hàm lấy dữ liệu Guest từ User_data.py
+                guest_data = get_guest_data()
+                st.session_state.is_logged_in = True
+                st.session_state.user_data = guest_data.get('daily_status', {})
+                st.session_state.account_info = guest_data.get('account', {})
+                st.session_state.db_grades = guest_data.get(
+                    'learning_results', {}).get('grades', [])
                 st.rerun()
-            if st.button("🏋️ Cập nhật Vận động", use_container_width=True):
-                show_exercise_dialog()
+
+
+# --- LOGIC ĐIỀU KHIỂN CHÍNH (ĐÃ BỌC ĐĂNG NHẬP) ---
+
+# 1. Khởi tạo trạng thái đăng nhập
+if 'is_logged_in' not in st.session_state:
+    st.session_state.is_logged_in = False
+
+# 2. Kiểm tra: Chưa đăng nhập -> Hiện Login
+if not st.session_state.is_logged_in:
+    render_login()
+
+# 3. Đã đăng nhập -> Chạy luồng App cũ của bạn (KHÔNG ĐỔI)
+else:
+    # --- Code cũ của bạn bắt đầu từ đây ---
+    if 'health_submitted' not in st.session_state:
+        st.session_state.health_submitted = False
+
+    if not st.session_state.health_submitted:
+        show_health_gate()
+
+    # --- GIAO DIỆN CHÍNH ---
+    if st.session_state.health_submitted == True:
+        # [LƯU Ý] Đảm bảo tên file trong view khớp với thư mục của bạn
+        PAGES = {
+            "Học tập": [
+                st.Page("view/Personal.py", title="Cá nhân",
+                        icon=":material/dashboard:"),
+                st.Page("view/Skills.py", title="Các kỹ năng",
+                        icon=":material/explore:"),
+            ],
+            "Hệ thống": [
+                st.Page("view/Setting.py", title="Cấu hình",
+                        icon=":material/settings:"),
+                st.Page("view/AboutUs.py", title="Về chúng tôi",
+                        icon=":material/groups:"),
+            ]
+        }
+        pg = st.navigation(PAGES)
+        pg.run()
+
+        # --- SIDEBAR CẢI TIẾN ---
+        with st.sidebar:
+            st.divider()
+            # 1. LOGIC TOAST
+            if 'toast_msg' in st.session_state and st.session_state.toast_msg:
+                st.toast(st.session_state.toast_msg)
+                st.session_state.toast_msg = None
+
+            # 2. TRẠNG THÁI SỨC KHỎE (Code cũ giữ nguyên)
+            with st.expander("❤️ Trạng thái & Nước", expanded=False):
+                data = st.session_state.user_data  # Data này đã được HealthGate nạp
+
+                # Hiển thị Hydration
+                water_val = data.get('water_consumed', 0.0)
+                st.write(f"💧 Nước: **{water_val:.2f} Lít**")
+                target_water = 3.0
+                progress = min(water_val / target_water, 1.0)
+                st.progress(progress)
+
+                if progress >= 1.0:
+                    st.caption("✅ Đã đạt mục tiêu nước!")
+                else:
+                    st.caption(
+                        f"Thiếu {(target_water - water_val):.1f}L mục tiêu.")
+
+                st.divider()
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write(f"🌙 Ngủ: **{data.get('sleep_hours', 0)}h**")
+                    st.caption(f"Q: {data.get('sleep_quality', 0)}/6")
+                with col_b:
+                    st.write(f"🧠 Stress: **{data.get('stress_score', 0)}/3**")
+                    st.caption(f"VĐ: {data.get('exercise_detail', 'Không')}")
+
+                st.divider()
+
+                # Nút cộng nước
+                if st.button("➕ Uống thêm 250ml (0.25L)", use_container_width=True):
+                    st.session_state.user_data['water_consumed'] = water_val + 0.25
+                    st.session_state.toast_msg = "Đã nạp thêm 0.25L nước! 💧"
+                    st.rerun()
+
+                if st.button("🏋️ Cập nhật Vận động", use_container_width=True):
+                    show_exercise_dialog()

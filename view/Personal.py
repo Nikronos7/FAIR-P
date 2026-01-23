@@ -116,7 +116,24 @@ elif selected == "Dashboard":
     head_col1, head_col2 = st.columns([2, 1])
 
     with head_col1:
-        st.markdown(f"### Chào Nikronos7! 👋")
+        # --- LOGIC THỜI GIAN (Dùng thư viện datetime) ---
+        current_hour = datetime.datetime.now().hour
+        if 5 <= current_hour < 11:
+            greeting = "Chào buổi sáng"
+        elif 11 <= current_hour < 14:
+            greeting = "Chào buổi trưa"
+        elif 14 <= current_hour < 18:
+            greeting = "Chào buổi chiều"
+        else:
+            greeting = "Chào buổi tối"
+
+        # --- LOGIC LẤY TÊN (Lấy từ session state bên fair-p.py) ---
+        # Lấy từ account_info nếu có, nếu không thì mặc định là 'Bạn'
+        acc_info = st.session_state.get('account_info', {})
+        display_name = acc_info.get('username', 'Nikronos7')
+
+        # --- HIỂN THỊ ---
+        st.markdown(f"### {greeting}, {display_name}! 👋")
         st.info(f"Trạng thái: {ai_mode_name}")
     with head_col2:
         st.metric("Readiness", f"{readiness}%")
@@ -159,73 +176,83 @@ elif selected == "Dashboard":
     st.divider()
     st.subheader("🎓 Bảng Điểm Chi Tiết Học Kỳ")
 
-    # 1. Khởi tạo dữ liệu mẫu (Chỉ chạy 1 lần đầu)
-    if 'grade_data' not in st.session_state:
-        subjects = ["Toán học", "Ngữ văn", "Tiếng Anh",
-                    "Vật lý", "Hóa học", "Tin học"]
-        df_grades = pd.DataFrame({
-            "STT": range(1, len(subjects) + 1),
-            "Môn học": subjects,
-            "TX 1": [0.0]*6, "TX 2": [0.0]*6, "TX 3": [0.0]*6, "TX 4": [0.0]*6,
-            "Giữa kì": [0.0]*6,
-            "Cuối kì": [0.0]*6,
-            "Trung bình": [0.0]*6
-        })
+    # --- BƯỚC 1: KHỞI TẠO DỮ LIỆU ---
+    # Logic: Nếu chưa có bảng HOẶC bảng đang bị lỗi toàn số 0 -> Nạp lại ngay
+    need_reload = 'grade_data' not in st.session_state
+    if not need_reload:
+        current_df = st.session_state.grade_data
+        if 'Trung bình' in current_df.columns and current_df['Trung bình'].sum() == 0:
+            need_reload = True
+
+    if need_reload:
+        # [FIX QUAN TRỌNG] Lấy từ db_grades (do fair-p.py nạp vào)
+        raw_grades = st.session_state.get('db_grades', [])
+
+        if raw_grades:
+            data_list = []
+            for i, item in enumerate(raw_grades):
+                scores = [item['tx1'], item['tx2'], item['tx3'],
+                          item['tx4'], item['midterm'], item['final']]
+                valid_scores = [s for s in scores if s > 0]
+                avg = sum(valid_scores) / \
+                    len(valid_scores) if valid_scores else 0.0
+
+                data_list.append({
+                    "STT": i + 1,
+                    "Môn học": item["subject"],
+                    "TX 1": item["tx1"], "TX 2": item["tx2"],
+                    "TX 3": item["tx3"], "TX 4": item["tx4"],
+                    "Giữa kì": item["midterm"], "Cuối kì": item["final"],
+                    "Trung bình": avg
+                })
+            df_grades = pd.DataFrame(data_list)
+        else:
+            # Tạo bảng rỗng nếu không có dữ liệu
+            subjects = ["Toán học", "Ngữ văn", "Tiếng Anh",
+                        "Vật lý", "Hóa học", "Tin học"]
+            df_grades = pd.DataFrame({
+                "STT": range(1, len(subjects) + 1),
+                "Môn học": subjects,
+                "TX 1": [0.0]*6, "TX 2": [0.0]*6, "TX 3": [0.0]*6, "TX 4": [0.0]*6,
+                "Giữa kì": [0.0]*6, "Cuối kì": [0.0]*6, "Trung bình": [0.0]*6
+            })
+
         st.session_state.grade_data = df_grades
 
-    # --- FIX LỖI NHẢY DÒNG: Luôn ép bảng xếp theo STT 1-6 trước khi vẽ ---
-    # Việc này giúp hàng không bị tụt xuống dưới khi điểm trung bình thay đổi
+    # --- BƯỚC 2: CẤU HÌNH & HIỂN THỊ ---
     st.session_state.grade_data = st.session_state.grade_data.sort_values(
         "STT")
-
-    # 2. Cấu hình cột điểm (Giới hạn 0-10)
     score_config = st.column_config.NumberColumn(
-        min_value=0.0,
-        max_value=10.0,
-        step=0.1,
-        format="%.2f",
-        width="small"
-    )
+        min_value=0.0, max_value=10.0, step=0.1, format="%.2f", width="small")
 
-    # 3. Hiển thị bảng nhập liệu
-    # Dùng key cố định để Streamlit không làm mất dữ liệu khi chuyển tab
     edited_df = st.data_editor(
         st.session_state.grade_data,
         column_config={
             "STT": st.column_config.NumberColumn(width="small", disabled=True),
             "Môn học": st.column_config.TextColumn(width="medium", disabled=True),
-            "TX 1": score_config,
-            "TX 2": score_config,
-            "TX 3": score_config,
-            "TX 4": score_config,
-            "Giữa kì": score_config,
-            "Cuối kì": score_config,
+            "TX 1": score_config, "TX 2": score_config, "TX 3": score_config, "TX 4": score_config,
+            "Giữa kì": score_config, "Cuối kì": score_config,
             "Trung bình": st.column_config.NumberColumn(format="%.2f", disabled=True, width="small")
         },
         hide_index=True,
         use_container_width=True,
-        key="grade_editor_dynamic"
+        key="grade_editor_final"
     )
 
-    # 4. Logic tính toán và Đồng bộ hóa (Sync)
-    # Kiểm tra nếu dữ liệu trên bảng khác với dữ liệu trong máy thì mới xử lý
+    # --- BƯỚC 3: XỬ LÝ SỬA ĐỔI (SYNC) ---
     if not edited_df.equals(st.session_state.grade_data):
         for index, row in edited_df.iterrows():
-            # Lấy tất cả các cột điểm
             all_scores = [row["TX 1"], row["TX 2"], row["TX 3"],
                           row["TX 4"], row["Giữa kì"], row["Cuối kì"]]
-            # Chỉ tính những ô có điểm (> 0)
             valid_scores = [s for s in all_scores if s > 0]
-
             new_avg = sum(valid_scores) / \
                 len(valid_scores) if valid_scores else 0.0
             edited_df.at[index, "Trung bình"] = new_avg
 
-        # Lưu lại vào máy và làm mới giao diện ngay lập tức
         st.session_state.grade_data = edited_df
         st.rerun()
 
-    # 5. Hiển thị Metric tổng kết
+    # --- BƯỚC 4: METRIC TỔNG ---
     avg_series = st.session_state.grade_data[st.session_state.grade_data["Trung bình"] > 0]["Trung bình"]
     final_gpa = avg_series.mean() if not avg_series.empty else 0.0
     st.metric("Điểm trung bình học kỳ (Dự kiến)", f"{final_gpa:.2f}")
