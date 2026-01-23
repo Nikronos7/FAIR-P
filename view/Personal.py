@@ -116,7 +116,24 @@ elif selected == "Dashboard":
     head_col1, head_col2 = st.columns([2, 1])
 
     with head_col1:
-        st.markdown(f"### Chào Nikronos7! 👋")
+        # --- LOGIC THỜI GIAN (Dùng thư viện datetime) ---
+        current_hour = datetime.datetime.now().hour
+        if 5 <= current_hour < 11:
+            greeting = "Chào buổi sáng"
+        elif 11 <= current_hour < 14:
+            greeting = "Chào buổi trưa"
+        elif 14 <= current_hour < 18:
+            greeting = "Chào buổi chiều"
+        else:
+            greeting = "Chào buổi tối"
+
+        # --- LOGIC LẤY TÊN (Lấy từ session state bên fair-p.py) ---
+        # Lấy từ account_info nếu có, nếu không thì mặc định là 'Bạn'
+        acc_info = st.session_state.get('account_info', {})
+        display_name = acc_info.get('username', 'Nikronos7')
+
+        # --- HIỂN THỊ ---
+        st.markdown(f"### {greeting}, {display_name}! 👋")
         st.info(f"Trạng thái: {ai_mode_name}")
     with head_col2:
         st.metric("Readiness", f"{readiness}%")
