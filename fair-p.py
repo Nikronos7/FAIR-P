@@ -235,7 +235,6 @@ def show_health_gate():
                 "exercise_detail": f"{ex_level} {ex_duration}p" if has_ex else "Không"
             }
             st.session_state.health_submitted = True
-            st.balloons()
             st.rerun()
 
 # --- 5. GIAO DIỆN ĐĂNG NHẬP (MỚI THÊM) ---
@@ -264,6 +263,12 @@ def render_login():
                         'account', {})
                     st.session_state.db_grades = user_info.get(
                         'learning_results', {}).get('grades', [])
+                    st.session_state.bio_data = user_info.get(
+                        'personalization', {}).get('biometrics', {})
+                    st.session_state.payment_data = user_info.get(
+                        'payment_subscription', {})
+                    st.session_state.sys_settings = user_info.get(
+                        'general_settings', {})
                     st.rerun()
                 else:
                     st.error("Sai thông tin đăng nhập!")
@@ -273,13 +278,36 @@ def render_login():
             st.info(
                 "Trải nghiệm nhanh các tính năng mà không cần lưu trữ dữ liệu lâu dài.")
             if st.button("👤 DÙNG THỬ (GUEST)", use_container_width=True):
-                # [FIX] Gọi hàm lấy dữ liệu Guest từ User_data.py
+                # 1. Gọi hàm lấy dữ liệu Guest từ User_data.py
                 guest_data = get_guest_data()
+
+                # 2. Bật trạng thái đăng nhập
                 st.session_state.is_logged_in = True
-                st.session_state.user_data = guest_data.get('daily_status', {})
+
+                # 3. [QUAN TRỌNG] Đưa toàn bộ ví tiền và sinh trắc của Guest vào Session
+                st.session_state.payment_data = guest_data.get(
+                    'payment_subscription', {})
                 st.session_state.account_info = guest_data.get('account', {})
                 st.session_state.db_grades = guest_data.get(
                     'learning_results', {}).get('grades', [])
+
+                # Nạp thêm sinh trắc và cài đặt (để trang Settings không bị lỗi 0.0)
+                st.session_state.bio_data = guest_data.get(
+                    'personalization', {}).get('biometrics', {})
+                st.session_state.sys_settings = guest_data.get(
+                    'general_settings', {})
+
+                # 4. Tạo dữ liệu trạng thái hằng ngày mặc định (vì Guest thường chưa có daily_status)
+                if 'daily_status' not in guest_data:
+                    st.session_state.user_data = {
+                        "sleep_hours": 7.0, "sleep_quality": 4,
+                        "water_consumed": 0.0, "stress_score": 1,
+                        "has_exercise": False, "exercise_detail": "Không"
+                    }
+                else:
+                    st.session_state.user_data = guest_data.get(
+                        'daily_status', {})
+
                 st.rerun()
 
 
@@ -293,7 +321,7 @@ if 'is_logged_in' not in st.session_state:
 if not st.session_state.is_logged_in:
     render_login()
 
-# 3. Đã đăng nhập -> Chạy luồng App cũ của bạn (KHÔNG ĐỔI)
+# 3. Đã đăng nhập
 else:
     # --- Code cũ của bạn bắt đầu từ đây ---
     if 'health_submitted' not in st.session_state:
@@ -324,7 +352,20 @@ else:
 
         # --- SIDEBAR CẢI TIẾN ---
         with st.sidebar:
-            st.divider()
+            acc_info = st.session_state.get('account_info', {})
+            pay_data = st.session_state.get('payment_data', {})
+
+            username = acc_info.get('username', 'Guest')
+            fair_coin = pay_data.get('fair_coin_balance', 0)
+            tier = pay_data.get('current_tier', 'Standard')
+            with st.container(border=True):
+                st.markdown(f"**{username.upper()}**")
+
+                # Hiển thị số dư Fair Coin với icon
+                st.markdown(f"**Fair Coin** `{fair_coin}`")
+
+                # Hiển thị hạng thành viên,model (nhỏ gọn)
+                st.caption(f"Status: {tier}")
             # 1. LOGIC TOAST
             if 'toast_msg' in st.session_state and st.session_state.toast_msg:
                 st.toast(st.session_state.toast_msg)

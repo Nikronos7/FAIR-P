@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
@@ -42,19 +43,53 @@ def calculate_readiness(data):
 
 def get_ai_mode(readiness_score):
     """
-    Trả về: (Tên hiển thị, Màu sắc, ID Model kỹ thuật)
+    Tự động xác định Model dựa trên Hạng thành viên (Tier) và Gói mua lẻ.
     """
+
+    # 1. TỰ ĐỘNG TÍNH RANK (Single Source of Truth)
+    # Lấy dữ liệu ví tiền trực tiếp
+    pay_data = st.session_state.get('payment_data', {})
+    current_tier = pay_data.get('current_tier', 'Standard Member')
+
+    # Định nghĩa Rank của Hạng thành viên
+    TIER_RANK = {
+        "Standard Member": 0,
+        "Artisan (Premium)": 1,
+        "Legend (Elite)": 2
+    }
+    tier_rank = TIER_RANK.get(current_tier, 0)
+
+    # Lấy Rank của Model mua lẻ (nếu có)
+    bought_rank = st.session_state.get('bought_model_rank', 0)
+
+    # Rank thực tế = Cái nào cao hơn thì lấy
+    final_rank = max(tier_rank, bought_rank)
+
+    # 2. XÁC ĐỊNH "THÁI ĐỘ" (Persona) THEO SỨC KHỎE
     if readiness_score >= 80:
-        # Model mạnh và ổn định nhất cho trạng thái đỉnh cao
-        return "Gemini Flash (Power Mode)", "success", "models/gemini-flash-latest"
-
+        mode_label = "Power Mode ⚡"
+        mode_color = "success"  # Xanh lá
     elif readiness_score >= 50:
-        # Model cân bằng
-        return "Gemini 2.5 Flash (Balanced)", "info", "models/gemini-2.5-flash"
-
+        mode_label = "Balanced ⚖️"
+        mode_color = "info"    # Xanh dương
     else:
-        # Model nhẹ nhàng cho lúc mệt
-        return "Gemini Flash Lite (Supportive)", "warning", "models/gemini-flash-lite-latest"
+        mode_label = "Supportive ❤️"
+        mode_color = "warning"  # Vàng
+
+    # 3. QUYẾT ĐỊNH MODEL ID (Dựa trên Final Rank đã tính ở bước 1)
+
+    # --- LEVEL 2: LEGEND / VIP ---
+    if final_rank >= 2:
+        return f"Gemini Latest ({mode_label})", mode_color, "models/gemini-flash-latest"
+
+    # --- LEVEL 1: ARTISAN / 3.0 ---
+    elif final_rank >= 1:
+        return f"Gemini 3.0 Flash ({mode_label})", mode_color, "models/gemini-3-flash-preview"
+
+    # --- LEVEL 0: STANDARD ---
+    else:
+        # Standard thì dùng bản 2.5 Flash
+        return f"Gemini 2.5 Flash ({mode_label})", mode_color, "models/gemini-2.5-flash"
 
 
 def save_daily_progress(score):

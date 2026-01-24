@@ -8,6 +8,8 @@ import pandas as pd
 from logic.chatbot import chat_logic
 # 2. Calculations: Để tính điểm sức khỏe
 from logic.calculations import calculate_readiness, get_ai_mode, get_progress_data
+# 3. Prompts: Điều chỉnh logic theo sức khoẻ
+from logic.prompts import get_system_prompt
 
 # --- HÀM VẼ RADAR CHART ---
 
@@ -73,31 +75,63 @@ with st.sidebar:
 # TRANG 1: HỌC TẬP (CHAT VỚI AI)
 # ==================================================
 if selected == "Học tập":
-
-    # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Hiển thị tin nhắn cũ
+    # 1. Tính điểm sức khỏe
+    user_data = st.session_state.get('user_data', {})
+    readiness_score = calculate_readiness(user_data)
+
+    # 2. GỌI HÀM MỚI: Tự động lấy Model xịn nhất theo Rank
+    # Không cần check 'active_model_id' thủ công nữa vì get_ai_mode đã lo hết
+    ai_name, ai_color, active_model_id = get_ai_mode(readiness_score)
+
+    # Cập nhật Sidebar để người dùng thấy ngay
+    st.session_state.active_model = ai_name
+
+    # 3. Giao diện Chat
     chat_container = st.container(height=450, border=True)
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Xử lý nhập liệu mới
-    if prompt := st.chat_input("Hỏi AI về bài học..."):
+    # 4. Input & Xử lý
+    if prompt := st.chat_input(f"Hỏi {ai_name}..."):
+        # Hiển thị tin nhắn người dùng (Chỉ hiện câu hỏi, không hiện system prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(prompt)
+
             with st.chat_message("assistant"):
-                # Dùng biến global
-                st.caption(f"🚀 Đang sử dụng: {active_model_id}")
-                with st.spinner("AI đang suy nghĩ..."):
+                with st.status(f"🚀 {ai_name}", state="running", expanded=False) as status:
+                    st.write(f"Kết nối não bộ: `{active_model_id}`")
+
+                    # --- [LOGIC MỚI] TẠO SYSTEM PROMPT ---
+                    # Lấy tên user
+                    acc_info = st.session_state.get('account_info', {})
+                    user_name = acc_info.get('username', 'Bạn')
+
+                    # Lấy "kịch bản" vai diễn dựa trên sức khỏe hiện tại
+                    system_instruction = get_system_prompt(
+                        readiness_score, active_model_id, user_name)
+
+                    # Ghép kịch bản vào câu hỏi để gửi cho AI (Kỹ thuật Prompt Engineering)
+                    full_prompt_to_ai = f"{system_instruction}\n\n---\nCâu hỏi của người dùng: {prompt}"
+
+                    st.write("Đang điều chỉnh thái độ phục vụ...")
+
+                    # Gọi API với prompt đã được "phù phép"
                     response = chat_logic.get_response(
-                        prompt, model_id=active_model_id)
-                    st.markdown(response)
+                        full_prompt_to_ai, model_id=active_model_id)
+
+                    status.update(
+                        label=f"✅ {ai_name} đã trả lời", state="complete")
+
+                st.markdown(response)
+
+        # Lưu tin nhắn Bot
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================
