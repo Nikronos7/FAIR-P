@@ -73,31 +73,49 @@ with st.sidebar:
 # TRANG 1: HỌC TẬP (CHAT VỚI AI)
 # ==================================================
 if selected == "Học tập":
-
-    # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Hiển thị tin nhắn cũ
+    # 1. Tính điểm sức khỏe
+    user_data = st.session_state.get('user_data', {})
+    readiness_score = calculate_readiness(user_data)
+
+    # 2. GỌI HÀM MỚI: Tự động lấy Model xịn nhất theo Rank
+    # Không cần check 'active_model_id' thủ công nữa vì get_ai_mode đã lo hết
+    ai_name, ai_color, active_model_id = get_ai_mode(readiness_score)
+
+    # Cập nhật Sidebar để người dùng thấy ngay
+    st.session_state.active_model = ai_name
+
+    # 3. Giao diện Chat
     chat_container = st.container(height=450, border=True)
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Xử lý nhập liệu mới
-    if prompt := st.chat_input("Hỏi AI về bài học..."):
+    # 4. Input & Xử lý
+    if prompt := st.chat_input(f"Hỏi {ai_name}..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(prompt)
+
             with st.chat_message("assistant"):
-                # Dùng biến global
-                st.caption(f"🚀 Đang sử dụng: {active_model_id}")
-                with st.spinner("AI đang suy nghĩ..."):
+                # Hiển thị Status đẹp
+                with st.status(f"🚀 {ai_name}", state="running", expanded=False) as status:
+                    st.write(f"Kết nối não bộ: `{active_model_id}`")
+                    st.write("Đang suy luận logic...")
+
+                    # Gọi API
                     response = chat_logic.get_response(
                         prompt, model_id=active_model_id)
-                    st.markdown(response)
+
+                    status.update(
+                        label=f"✅ {ai_name} đã trả lời", state="complete")
+
+                st.markdown(response)
+
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================

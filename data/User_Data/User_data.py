@@ -22,7 +22,7 @@ USERS_DB = {
         },
         "payment_subscription": {
             "vnd_balance": 7000000,
-            "fair_coin_balance": 1250,
+            "fair_coin_balance": 3000,
             "current_tier": "Artisan (Premium)"
         },
         # [MỚI] Dữ liệu điểm số học kỳ
@@ -62,8 +62,8 @@ USERS_DB = {
             }
         },
         "payment_subscription": {
-            "vnd_balance": 50000,
-            "fair_coin_balance": 10,
+            "vnd_balance": 5000000,
+            "fair_coin_balance": 2000,
             "current_tier": "Standard Member"
         },
         # [MỚI] Dữ liệu điểm số khách (Demo)
