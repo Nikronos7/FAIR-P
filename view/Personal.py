@@ -8,6 +8,8 @@ import pandas as pd
 from logic.chatbot import chat_logic
 # 2. Calculations: Để tính điểm sức khỏe
 from logic.calculations import calculate_readiness, get_ai_mode, get_progress_data
+# 3. Prompts: Điều chỉnh logic theo sức khoẻ
+from logic.prompts import get_system_prompt
 
 # --- HÀM VẼ RADAR CHART ---
 
@@ -96,26 +98,40 @@ if selected == "Học tập":
 
     # 4. Input & Xử lý
     if prompt := st.chat_input(f"Hỏi {ai_name}..."):
+        # Hiển thị tin nhắn người dùng (Chỉ hiện câu hỏi, không hiện system prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                # Hiển thị Status đẹp
                 with st.status(f"🚀 {ai_name}", state="running", expanded=False) as status:
                     st.write(f"Kết nối não bộ: `{active_model_id}`")
-                    st.write("Đang suy luận logic...")
 
-                    # Gọi API
+                    # --- [LOGIC MỚI] TẠO SYSTEM PROMPT ---
+                    # Lấy tên user
+                    acc_info = st.session_state.get('account_info', {})
+                    user_name = acc_info.get('username', 'Bạn')
+
+                    # Lấy "kịch bản" vai diễn dựa trên sức khỏe hiện tại
+                    system_instruction = get_system_prompt(
+                        readiness_score, active_model_id, user_name)
+
+                    # Ghép kịch bản vào câu hỏi để gửi cho AI (Kỹ thuật Prompt Engineering)
+                    full_prompt_to_ai = f"{system_instruction}\n\n---\nCâu hỏi của người dùng: {prompt}"
+
+                    st.write("Đang điều chỉnh thái độ phục vụ...")
+
+                    # Gọi API với prompt đã được "phù phép"
                     response = chat_logic.get_response(
-                        prompt, model_id=active_model_id)
+                        full_prompt_to_ai, model_id=active_model_id)
 
                     status.update(
                         label=f"✅ {ai_name} đã trả lời", state="complete")
 
                 st.markdown(response)
 
+        # Lưu tin nhắn Bot
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================

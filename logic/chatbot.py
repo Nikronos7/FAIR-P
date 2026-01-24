@@ -35,17 +35,20 @@ class ChatBotLogic:
 
         for current_model in unique_pool:
             try:
-                # Gọi API với model hiện tại trong vòng lặp
                 response = self.client.models.generate_content(
-                    model=current_model,  # QUAN TRỌNG: Phải dùng current_model, không dùng model_id
+                    model=current_model,
                     contents=prompt
                 )
 
-                # --- ĐÂY LÀ DÒNG BẠN ĐANG THIẾU ---
-                # Biến 'response' được sử dụng ở đây để lấy text
+                # --- SỬA LỖI NONETYPE TẠI ĐÂY ---
+                if not response or not response.text:
+                    print(
+                        f"⚠️ Model {current_model} trả về rỗng, thử model khác...")
+                    continue  # Nhảy sang model tiếp theo trong danh sách dự phòng
+
                 text_output = response.text
 
-                # --- BƯỚC LÀM SẠCH (CLEANUP) ---
+                # --- BƯỚC LÀM SẠCH ---
                 forbidden_tags = ["<blockquote>",
                                   "</blockquote>", "<br>", "</div>"]
                 for tag in forbidden_tags:
@@ -54,15 +57,13 @@ class ChatBotLogic:
                 return text_output.strip()
 
             except Exception as e:
-                err_msg = str(e)
-                print(f"⚠️ Lỗi model {current_model}: {err_msg}")
-
-                # Nếu lỗi hết quota (429) hoặc quá tải (503), thử model tiếp theo
-                if any(code in err_msg for code in ["429", "503", "quota", "resource_exhausted"]):
+                err_msg = str(e).upper()
+                # Nếu hết quota hoặc quá tải, in thông báo rồi CONTINUE để thử model khác
+                if any(code in err_msg for code in ["429", "503", "QUOTA", "EXHAUSTED"]):
+                    print(f"❌ {current_model} hết lượt, đang chuyển model...")
                     continue
 
-                # Nếu lỗi khác (như sai API Key), dừng luôn
-                return f"⚠️ Lỗi hệ thống: {err_msg}"
+                return f"⚠️ Lỗi hệ thống: {str(e)}"
 
         return "❤️ Tất cả model AI đều đang bận. Bạn vui lòng đợi 1 phút rồi thử lại nhé!"
 
