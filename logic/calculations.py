@@ -121,3 +121,13 @@ def get_progress_data():
     if os.path.exists(file_path):
         return pd.read_csv(file_path)
     return None
+
+
+def calculate_single_activity_score(intensity):
+    SCORE_CONFIG = {
+        "Nhẹ": 1.0,
+        "Vừa": 1.5,
+        "Cao (High Intensity)": 2.0
+    }
+    """Hàm tính điểm duy nhất, gọi ở đâu cũng ra kết quả giống nhau"""
+    return SCORE_CONFIG.get(intensity, 1.0)
