@@ -31,7 +31,7 @@ def plot_radar_chart(data):
         theta=categories,
         fill='toself',
         name='Mục tiêu cân bằng',
-        line_color='lightgray',
+        line_color="#2E2E2E",
         opacity=0.4
     ))
 
@@ -75,63 +75,82 @@ with st.sidebar:
 # TRANG 1: HỌC TẬP (CHAT VỚI AI)
 # ==================================================
 if selected == "Học tập":
+    # Khởi tạo lịch sử chat nếu chưa có
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # 1. Tính điểm sức khỏe
+    # --- 1. TÍNH TOÁN TRẠNG THÁI (SỨC KHỎE & MODEL) ---
     user_data = st.session_state.get('user_data', {})
     readiness_score = calculate_readiness(user_data)
 
-    # 2. GỌI HÀM MỚI: Tự động lấy Model xịn nhất theo Rank
-    # Không cần check 'active_model_id' thủ công nữa vì get_ai_mode đã lo hết
+    # Tự động lấy Model xịn nhất và Persona theo Rank
     ai_name, ai_color, active_model_id = get_ai_mode(readiness_score)
-
-    # Cập nhật Sidebar để người dùng thấy ngay
     st.session_state.active_model = ai_name
 
-    # 3. Giao diện Chat
+    # --- 2. LẤY DỮ LIỆU TỪ GIỎ HÀNG KIẾN THỨC ---
+    # Đây là bước quan trọng để kết nối với trang Skills.py
+    active_skills_cart = st.session_state.get('active_skills', [])
+
+    # Hiển thị thông báo nhỏ nếu đang có kỹ năng được nạp (UX)
+    if active_skills_cart:
+        skill_titles = ", ".join([s['title'] for s in active_skills_cart])
+        st.caption(f"⚡ **AI đang được nạp kiến thức:** {skill_titles}")
+
+    # --- 3. GIAO DIỆN CHAT ---
     chat_container = st.container(height=450, border=True)
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # 4. Input & Xử lý
+    # --- 4. XỬ LÝ INPUT & PROMPT ENGINEERING ---
     if prompt := st.chat_input(f"Hỏi {ai_name}..."):
-        # Hiển thị tin nhắn người dùng (Chỉ hiện câu hỏi, không hiện system prompt)
+        # A. Hiển thị tin nhắn người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(prompt)
 
+            # B. Xử lý phía AI
             with st.chat_message("assistant"):
-                with st.status(f"🚀 {ai_name}", state="running", expanded=False) as status:
-                    st.write(f"Kết nối não bộ: `{active_model_id}`")
+                # Tạo hiệu ứng "đang suy nghĩ" chuyên nghiệp
+                with st.status(f"🚀 {ai_name} đang phân tích...", state="running", expanded=False) as status:
+                    st.write(f"🧠 **Model:** `{active_model_id}`")
+                    st.write(f"❤️ **Sức khỏe User:** {readiness_score}/100")
 
-                    # --- [LOGIC MỚI] TẠO SYSTEM PROMPT ---
+                    if active_skills_cart:
+                        st.write(
+                            f"📚 **Kỹ năng vận dụng:** {len(active_skills_cart)} module")
+
+                    # [LOGIC CỐT LÕI] Tạo System Prompt
                     # Lấy tên user
                     acc_info = st.session_state.get('account_info', {})
                     user_name = acc_info.get('username', 'Bạn')
 
-                    # Lấy "kịch bản" vai diễn dựa trên sức khỏe hiện tại
+                    # Gọi hàm get_system_prompt với đầy đủ 4 tham số
                     system_instruction = get_system_prompt(
-                        readiness_score, active_model_id, user_name)
+                        readiness_score=readiness_score,
+                        model_id=active_model_id,
+                        username=user_name,
+                        active_skills=active_skills_cart  # <--- QUAN TRỌNG: Truyền giỏ hàng vào đây
+                    )
 
-                    # Ghép kịch bản vào câu hỏi để gửi cho AI (Kỹ thuật Prompt Engineering)
-                    full_prompt_to_ai = f"{system_instruction}\n\n---\nCâu hỏi của người dùng: {prompt}"
+                    # Ghép kịch bản vào câu hỏi
+                    full_prompt_to_ai = f"{system_instruction}\n\n---\nUser Input: {prompt}"
 
-                    st.write("Đang điều chỉnh thái độ phục vụ...")
+                    st.write("✅ Đã xây dựng xong ngữ cảnh.")
 
-                    # Gọi API với prompt đã được "phù phép"
+                    # Gọi API lấy câu trả lời
                     response = chat_logic.get_response(
                         full_prompt_to_ai, model_id=active_model_id)
 
                     status.update(
                         label=f"✅ {ai_name} đã trả lời", state="complete")
 
+                # C. Hiển thị câu trả lời của AI
                 st.markdown(response)
 
-        # Lưu tin nhắn Bot
+        # D. Lưu tin nhắn Bot vào session
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================

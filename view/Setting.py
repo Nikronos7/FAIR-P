@@ -82,13 +82,12 @@ def render_settings():
 
     acc_info = st.session_state.get('account_info', {})
 
-    st.title("⚙️ CÀI ĐẶT HỆ THỐNG")
+    st.title("⚙️ Cài đặt")
 
     # TẠO CÁC TAB
-    tab_profile, tab_wallet, tab_system = st.tabs([
+    tab_profile, tab_wallet = st.tabs([
         "👤 Hồ sơ & Sinh trắc",
         "💳 Ví & Gói cước",
-        "🖥️ Hệ thống"
     ])
 
     # --- TAB 1: HỒ SƠ & SINH TRẮC (CÓ NÚT ĐĂNG XUẤT) ---
@@ -329,15 +328,6 @@ def render_settings():
                         else:
                             st.error(
                                 f"❌ Thiếu {PRICE_LEGEND - current_vnd:,}đ")
-
-    # --- TAB 3: HỆ THỐNG ---
-    with tab_system:
-        st.info("Các tính năng này đang được phát triển!")
-        st.subheader("Tùy chỉnh giao diện")
-        settings = st.session_state.get('sys_settings', {})
-        st.selectbox("Ngôn ngữ", ["Tiếng Việt", "English"], index=0)
-        st.toggle("Chế độ tối (Dark Mode)", value=(
-            settings.get('theme') == "Dark Mode"))
 
 
 render_settings()

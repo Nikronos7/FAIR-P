@@ -1,15 +1,16 @@
 import streamlit as st
-from dotenv import load_dotenv
+# from dotenv import load_dotenv : no longer needed when deploy
 from data.User_Data.User_data import verify_login, get_guest_data
+from logic.calculations import calculate_single_activity_score
+
 # 1. Khởi động cấu hình
-load_dotenv()
+# load_dotenv() example for code
 
 st.set_page_config(
-    page_title="FAIR-P AI",
+    page_title="FAIR-P",
     page_icon="assets/fair-p_logo.png",
     layout="wide"
 )
-
 # --- 1. HÀM PHÂN LOẠI GIẤC NGỦ ---
 
 
@@ -68,171 +69,350 @@ def get_stress_options(has_exercise, duration, level):
         max_idx = 0
     valid_names = all_names[0:max_idx + 1]
     return {name: stress_map[name] for name in valid_names}
-# --- 3. HÀM CẬP NHẬT VẬN ĐỘNG (POP-UP) ---
+# --- 3. HÀM CẬP NHẬT SỨC KHOẺ & VẬN ĐỘNG (POP-UP) ---
 
 
-@st.dialog("🏋️ Cập nhật Vận động Giữa giờ")
-def show_exercise_dialog():
-    st.write("Cập nhật bài tập để AI điều chỉnh mức Stress giới hạn.")
+def add_water_callback():
+    # 1. Khởi tạo biến tạm để gom số nước (nếu chưa có)
+    if 'temp_water_added' not in st.session_state:
+        st.session_state.temp_water_added = 0.0
 
-    col1, col2 = st.columns(2)
-    with col1:
-        new_duration = st.number_input(
-            "Vừa tập thêm (phút):", 5, 120, 15, step=5)
-    with col2:
-        new_level = st.selectbox("Cường độ:", ["Nhẹ", "Vừa", "Nặng"])
+    # 2. Cộng dồn vào biến tạm (Ví dụ bấm 3 lần thì biến này thành 0.75)
+    st.session_state.temp_water_added += 0.25
 
-    if st.button("Xác nhận & Cập nhật", use_container_width=True):
-        # 1. Lấy dữ liệu cũ
-        d = st.session_state.user_data
+    # 3. Cập nhật dữ liệu thật
+    current_val = st.session_state.user_data.get('water_consumed', 0.0)
+    new_total = current_val + 0.25
+    st.session_state.user_data['water_consumed'] = new_total
 
-        # 2. Cộng dồn thời gian
-        old_duration = d.get('exercise_duration', 0)
-        total_duration = old_duration + new_duration
+    # 4. Ghi thông báo dựa trên BIẾN TẠM (Hiển thị tổng số đã bấm)
+    added_total = st.session_state.temp_water_added
+    st.session_state.toast_msg = f"➕ Đã nạp thêm tổng cộng: {added_total:.2f}L 💧"
 
-        # 3. Cập nhật điểm số vận động (để vẽ biểu đồ Radar)
-        level_to_score = {"Nhẹ": 1.0, "Vừa": 1.5, "Nặng": 2.0}
 
-        # 4. TÍNH LẠI STRESS (LOGIC MỚI: KẸP TRẦN)
-        # Lấy danh sách các mức stress hợp lệ cho bài tập này
-        # Ví dụ: Nhẹ 30p -> Trả về {0:0, 1:1, 2:2} -> List values là [0, 1, 2]
-        new_stress_options = get_stress_options(
-            True, total_duration, new_level)
-        valid_scores = list(new_stress_options.values())
+def reset_exercise_callback():
+    """Reset vận động và giữ nguyên Dialog"""
+    st.session_state.daily_activities = {}
+    st.session_state.user_data.update({
+        'exercise_score': 0.0,
+        'exercise_detail': "Không",
+        'has_exercise': False,
+        'stress_score': 2  # Reset về mức trung bình
+    })
 
-        # Tìm mức "Max trong khoảng slide bar" (Mức tệ nhất cho phép)
-        # Ví dụ: Nhẹ 30p -> Max cho phép là 2 (Khá)
-        max_allowed_stress = max(valid_scores)
+# --- DIALOG CHÍNH ---
 
-        # Lấy stress hiện tại của người dùng
-        current_stress = d.get('stress_score', 2)
 
-        # So sánh:
-        # - Nếu đang Stress 3 (Cao) > Max 2 -> Bị kéo xuống 2.
-        # - Nếu đang Stress 1 (Thấp) < Max 2 -> Giữ nguyên 1.
-        new_stress_score = min(current_stress, max_allowed_stress)
+@st.dialog("❤️ TRẠNG THÁI & VẬN ĐỘNG")
+def show_health_status_dialog():
+    # 1. Khởi tạo Dictionary nếu chưa có
+    if 'daily_activities' not in st.session_state:
+        st.session_state.daily_activities = {}
 
-        # 5. Cập nhật vào Session State
-        st.session_state.user_data.update({
-            "has_exercise": True,
-            "exercise_level": new_level,
-            "exercise_duration": total_duration,
-            "exercise_score": level_to_score[new_level],
-            "exercise_detail": f"{new_level} (Tổng {total_duration}p)",
-            "stress_score": new_stress_score  # Cập nhật stress mới
-        })
+    tab_overview, tab_exercise = st.tabs(
+        ["📊 Tổng quan", "🏋️ Cập nhật Vận động"])
 
-        # 6. Thông báo
-        st.session_state.toast_msg = f"Đã cộng thêm {new_duration}p tập! Stress giới hạn ở mức {new_stress_score}. 📉"
-        st.rerun()
+    # ==================================================
+    # TAB 1: TỔNG QUAN (Xử lý nước bằng Callback)
+    # ==================================================
+    with tab_overview:
+        st.markdown("### 💧 Hydration")
+        # Lấy data real-time
+        current_water = st.session_state.user_data.get('water_consumed', 0.0)
+        target_water = 3.0
+
+        c1, c2 = st.columns([2, 1], vertical_alignment="bottom")
+        with c1:
+            st.metric("Đã uống", f"{current_water:.2f}L",
+                      delta=f"{current_water - target_water:.2f}L")
+        with c2:
+            # QUAN TRỌNG: Dùng on_click gọi hàm callback bên ngoài
+            # Không dùng st.fragment hay st.rerun() ở đây -> Dialog sẽ không bị tắt
+            st.button("➕ 0.25L", key="btn_water_dialog",
+                      on_click=add_water_callback)
+
+        if st.button("🔄 Cập nhật", key="btn_refresh_app", use_container_width=True):
+            st.rerun()
+
+        progress = min(current_water / target_water, 1.0)
+        st.progress(progress, text=f"Mục tiêu: {target_water}L")
+
+        if progress >= 1.0:
+            st.caption("✅ Đã đạt mục tiêu nước!")
+
+        st.divider()
+
+        # Phần ngủ & Stress
+        data = st.session_state.user_data
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write(f"🌙 Ngủ: **{data.get('sleep_hours', 0)}h**")
+        with col_b:
+            s_val = data.get('stress_score', 0)
+            color = {0: "green", 1: "blue",
+                     2: "orange", 3: "red"}.get(s_val, "red")
+            st.markdown(f"🧠 Stress: :{color}[**{s_val}/3**]")
+
+    # ==================================================
+    # TAB 2: VẬN ĐỘNG (Logic Cộng Dồn Thông Minh)
+    # ==================================================
+    with tab_exercise:
+        st.info("💡 Các bài tập sẽ được cộng dồn điểm (Tối đa 2.0/ngày).")
+
+        # A. HIỂN THỊ DANH SÁCH (LOGGING)
+        current_acts = st.session_state.daily_activities
+        if current_acts:
+            st.write("📌 **Chi tiết hôm nay:**")
+            for act_name, info in current_acts.items():
+                st.write(
+                    f"• {act_name}: {info['duration']}p - {info['intensity']} ({info['score']}đ)")
+
+        st.divider()
+
+        # B. FORM NHẬP LIỆU
+        sport_list = [
+            "Đi bộ", "Yoga/Thiền", "Chạy bộ", "Gym/Calisthenics",
+            "Bóng đá", "Bơi lội", "Khác"
+        ]
+
+        # Mapping để lọc cường độ hợp lý cho từng môn
+        intensity_map = {
+            "Đi bộ": ["Nhẹ", "Vừa"],
+            "Yoga/Thiền": ["Nhẹ", "Vừa"],
+            # Các môn còn lại mặc định có Vừa/Cao
+        }
+
+        activity = st.selectbox("Môn thể thao", sport_list)
+        # Tự động lấy list cường độ, nếu không có trong map thì lấy list mặc định
+        available_int = intensity_map.get(
+            activity, ["Vừa", "Cao (High Intensity)"])
+
+        c_time, c_int = st.columns(2)
+        with c_time:
+            duration = st.number_input(
+                "Thời gian (phút)", min_value=15, value=30, step=5)
+        with c_int:
+            intensity = st.selectbox("Cường độ", available_int)
+
+        # C. XỬ LÝ LOGIC (SMART ACCUMULATION)
+        c_btn_add, c_btn_reset = st.columns([2, 1])
+
+        with c_btn_add:
+            if st.button("💾 Lưu bài tập", type="primary", use_container_width=True):
+                # 1. Tính điểm bài tập mới (Dùng hàm chuẩn)
+                new_points = calculate_single_activity_score(intensity)
+
+                # 2. Logic Cộng Dồn (Smart Update)
+                if activity in st.session_state.daily_activities:
+                    # Nếu môn này đã có -> Cộng dồn vào
+                    old_data = st.session_state.daily_activities[activity]
+                    updated_duration = old_data['duration'] + duration
+                    updated_score = old_data['score'] + new_points
+
+                    # Cập nhật lại vào Dictionary
+                    st.session_state.daily_activities[activity] = {
+                        # Ghi chú lịch sử cường độ
+                        "intensity": f"{old_data['intensity']} + {intensity}",
+                        "duration": updated_duration,
+                        "score": updated_score
+                    }
+                    action_msg = f"Đã cộng thêm {duration}p vào {activity}"
+                else:
+                    # Nếu chưa có -> Tạo mới
+                    st.session_state.daily_activities[activity] = {
+                        "intensity": intensity,
+                        "duration": duration,
+                        "score": new_points
+                    }
+                    action_msg = f"Đã thêm mới: {activity}"
+
+                # 3. Tính Tổng Điểm Toàn Cục (Re-calculate Global Score)
+                # Cộng tổng điểm của tất cả các môn trong dictionary
+                raw_total_score = sum(
+                    item['score'] for item in st.session_state.daily_activities.values())
+
+                # GIỚI HẠN TRẦN (MAX CAP): 2.0 ĐIỂM
+                final_score = min(raw_total_score, 2.0)
+
+                # 4. Tạo chuỗi hiển thị tóm tắt
+                # Ví dụ: "Đi bộ (Nhẹ + Vừa) + Gym (Cao)"
+                detail_parts = []
+                for k, v in st.session_state.daily_activities.items():
+                    detail_parts.append(f"{k} ({v['duration']}p)")
+                detail_str = " + ".join(detail_parts)
+
+                # 5. Logic Giảm Stress (Tự động tìm mức tốt nhất)
+                # Quét lại toàn bộ hoạt động để tìm bài tập nặng nhất
+                min_stress_limit = 2
+                all_intensities_str = " ".join(
+                    [v['intensity'] for v in st.session_state.daily_activities.values()])
+                total_duration = sum(
+                    [v['duration'] for v in st.session_state.daily_activities.values()])
+
+                # Nếu có bất kỳ bài Cao nào hoặc tổng thời gian > 60p -> Xả stress tối đa
+                if "Cao" in all_intensities_str or total_duration >= 60:
+                    min_stress_limit = 0
+                elif "Vừa" in all_intensities_str or total_duration >= 30:
+                    min_stress_limit = min(min_stress_limit, 1)
+
+                current_stress = st.session_state.user_data.get(
+                    'stress_score', 2)
+                final_stress = min(current_stress, min_stress_limit)
+
+                # 6. Commit vào Database (User Data)
+                st.session_state.user_data.update({
+                    'exercise_score': final_score,  # Đảm bảo max 2.0
+                    'exercise_detail': detail_str,
+                    'has_exercise': True,
+                    'stress_score': final_stress
+                })
+
+                st.session_state.toast_msg = f"{action_msg}. Tổng điểm: {final_score}/2.0"
+                st.rerun()
+
+        with c_btn_reset:
+            # Dùng Callback để reset mà không tắt Dialog (nếu muốn)
+            # Tuy nhiên nút này ít dùng nên để rerun cũng được, nhưng dùng on_click cho xịn
+            st.button("Reset", use_container_width=True,
+                      on_click=reset_exercise_callback)
+
 # --- 4. GIAO DIỆN CHỐT CHẶN (HEALTH GATE) ---
 
 
 def show_health_gate():
-    # --- Lấy tên người dùng ---
-
     st.title("🛡️ Cổng Kiểm Soát Sức Khỏe FAIR-P")
     account_info = st.session_state.get('account_info', {})
     display_name = account_info.get('username', 'Bạn')
 
-    # --- ĐỊNH NGHĨA ĐIỂM SỐ VẬN ĐỘNG (Dùng cho tính toán AI sau này) ---
-    level_to_score = {
-        "Nhẹ": 1.0,
-        "Vừa": 1.5,
-        "Nặng": 2.0
+    # Cấu hình môn thể thao (Copy để đồng bộ logic)
+    sport_config = {
+        "Đi bộ": ["Nhẹ", "Vừa"],
+        "Yoga/Thiền": ["Nhẹ", "Vừa"],
+        "Chạy bộ": ["Vừa", "Cao (High Intensity)"],
+        "Gym/Calisthenics": ["Vừa", "Cao (High Intensity)"],
+        "Bóng đá": ["Vừa", "Cao (High Intensity)"],
+        "Bơi lội": ["Vừa", "Cao (High Intensity)"],
+        "Khác": ["Nhẹ", "Vừa", "Cao (High Intensity)"]
     }
 
-    # --- LOGIC LẤY GIÁ TRỊ MẶC ĐỊNH (KHI BẤM CẬP NHẬT) ---
+    # Giá trị mặc định
     defaults = {
-        "sleep": 8.0,
-        "water": 0.5,
-        "has_ex": False,
-        "ex_time": 30,
-        "ex_level": "Nhẹ"
+        "sleep": st.session_state.user_data.get("sleep_hours", 8.0),
+        "water": st.session_state.user_data.get("water_consumed", 0.5),
+        "has_ex": st.session_state.user_data.get("has_exercise", False)
     }
-    if 'user_data' in st.session_state:
-        d = st.session_state.user_data
-        defaults["sleep"] = d.get("sleep_hours", 8.0)
-        defaults["water"] = d.get("water_consumed", 0.5)
-        defaults["has_ex"] = d.get("has_exercise", False)
-        # Nếu muốn nhớ chi tiết Ex_level cũ, cần lưu riêng biến, tạm thời để mặc định là Nhẹ
 
-    st.info(
-        f"Chào {display_name}! Hãy cập nhật trạng thái để AI tối ưu hóa lộ trình học cho bạn.")
+    st.info(f"Chào {display_name}! Cập nhật trạng thái để mở khóa AI.")
 
     with st.container(border=True):
         col1, col2 = st.columns(2)
 
+        # --- CỘT 1: SINH HOẠT ---
         with col1:
             st.subheader("🌙 Giấc ngủ & 💧 Nước")
-            # 1. Slide chọn nước
             water_liters = st.slider(
-                "Lượng nước đã uống (Lít):", 0.0, 4.0, defaults["water"], 0.1)
+                "Lượng nước (Lít):", 0.0, 4.0, defaults["water"], 0.1)
+            st.divider()
+            sleep_hours = st.slider(
+                "Giấc ngủ (Giờ):", 0.0, 12.0, defaults["sleep"], 0.5)
+
+            # Logic chất lượng ngủ
+            q_options = get_quality_options(sleep_hours)
+            q_name = st.select_slider("Cảm giác khi dậy:", options=list(
+                q_options.keys()), value=list(q_options.keys())[-1])
+            q_score = q_options[q_name]
+
+        # --- CỘT 2: VẬN ĐỘNG (NÂNG CẤP UI) ---
+        with col2:
+            st.subheader("🏋️ Vận động")
+            has_ex = st.toggle("Hôm nay có tập luyện?",
+                               value=defaults["has_ex"])
+
+            # Biến lưu kết quả tạm
+            ex_score = 0.0
+            ex_detail = "Không"
+            limit_stress_from_ex = 3  # Mặc định không tập thì không giảm stress trần
+
+            if has_ex:
+                # HIỆN UI CHỌN MÔN (Giống Dialog)
+                act_gate = st.selectbox("Môn thể thao", list(
+                    sport_config.keys()), key="gate_act")
+                av_int = sport_config.get(act_gate, ["Vừa"])
+
+                c_g1, c_g2 = st.columns(2)
+                with c_g1:
+                    dur_gate = st.number_input(
+                        "Phút:", min_value=15, value=30, step=15, key="gate_dur")
+                with c_g2:
+                    int_gate = st.selectbox("Mức độ:", av_int, key="gate_int")
+
+                # Tính điểm ngay tại đây
+                ex_score = calculate_single_activity_score(int_gate)
+                ex_detail = f"{act_gate} ({int_gate})"
+
+                # Tính giới hạn stress
+                if int_gate == "Cao (High Intensity)" or dur_gate >= 60:
+                    limit_stress_from_ex = 0
+                elif int_gate == "Vừa" or dur_gate >= 30:
+                    limit_stress_from_ex = 1
+                else:
+                    limit_stress_from_ex = 2
 
             st.divider()
 
-            # 2. Slide giấc ngủ
-            sleep_hours = st.slider(
-                "Số giờ ngủ đêm qua:", 0.0, 12.0, defaults["sleep"], 0.25, format="%g giờ")
-            q_options = get_quality_options(sleep_hours)
-            q_names = list(q_options.keys())
-            q_name = st.select_slider(
-                "Cảm giác khi thức dậy:", options=q_names, value=q_names[-1])
-            q_score = q_options[q_name]
-
-        with col2:
-            st.subheader("🏋️ Vận động & Tâm trạng")
-            has_ex = st.toggle("Bạn đã tập thể dục hôm nay?",
-                               value=defaults["has_ex"])
-
-            ex_duration = 0
-            ex_level = "Nhẹ"
-
-            if has_ex:
-                c1, c2 = st.columns(2)
-                ex_duration = c1.number_input(
-                    "Thời gian (phút):", 5, 180, 30, step=5)
-                ex_level = c2.select_slider(
-                    "Cường độ:", ["Nhẹ", "Vừa", "Nặng"])
-
-            s_options = get_stress_options(has_ex, ex_duration, ex_level)
+            # Logic Stress (Kết hợp tập luyện)
+            st.write("Stress hiện tại:")
+            # Tham số giả để lấy list key
+            s_options = get_stress_options(has_ex, 30, "Vừa")
             s_names = list(s_options.keys())
 
-            st.write("Mức độ Stress hiện tại:")
-            if len(s_names) == 1:
+            # Nếu tập nặng, tự động khóa các mức Stress cao
+            if limit_stress_from_ex == 0:
                 st.success(
-                    f"✅ Tuyệt vời! Bài tập {ex_level} {ex_duration}p đã loại bỏ stress.")
-                s_name = s_names[0]
-                s_score = s_options[s_name]
+                    "🔥 Bài tập cường độ cao hoặc thường xuyên đã xả sạch Stress!")
+                s_name = "Thoải mái"  # Mức thấp nhất
+                s_score = 0
             else:
-                default_val = s_names[0] if has_ex else s_names[1]
-                if default_val not in s_names:
-                    default_val = s_names[0]
+                # Chỉ hiện các mức stress <= limit
+                valid_s_names = [
+                    name for name in s_names if s_options[name] <= limit_stress_from_ex]
+                # Nếu list rỗng (trường hợp hiếm), lấy mức thấp nhất
+                if not valid_s_names:
+                    valid_s_names = [s_names[0]]
+
                 s_name = st.select_slider(
-                    "Chọn mức độ:", options=s_names, value=default_val, label_visibility="collapsed")
-                s_score = s_options[s_name]
+                    "Mức độ:", options=s_names, value=valid_s_names[-1])
+                # Lưu ý: Ở trên mình cho chọn full options, nhưng logic bên dưới sẽ ép xuống min
+                raw_score = s_options[s_name]
+                s_score = min(raw_score, limit_stress_from_ex)
 
+                if raw_score > s_score:
+                    st.caption(
+                        f"✨ Stress thực tế được giảm xuống mức {s_score} nhờ tập luyện.")
+
+        # NÚT SUBMIT
+        if st.button("🚀 CẬP NHẬT VÀO HỆ THỐNG", type="primary", use_container_width=True):
+            # 1. Cập nhật Dictionary hoạt động (Cho đồng bộ với Dialog)
             if has_ex:
-                st.caption(
-                    f"✨ FAIR-P giới hạn mức Stress tối đa dựa trên bài tập {ex_level}.")
+                st.session_state.daily_activities = {
+                    act_gate: {
+                        "intensity": int_gate,
+                        "duration": dur_gate,
+                        "score": ex_score
+                    }
+                }
+            else:
+                st.session_state.daily_activities = {}
 
-        # Nút xác nhận
-        btn_label = "✅ BẮT ĐẦU HỌC"
-
-        if st.button(btn_label, use_container_width=True):
-            # --- TÍNH TOÁN ĐIỂM SỐ VẬN ĐỘNG ---
-            current_ex_score = level_to_score[ex_level] if has_ex else 0.0
-
+            # 2. Lưu User Data
             st.session_state.user_data = {
                 "sleep_hours": sleep_hours,
                 "sleep_quality": q_score,
                 "water_consumed": water_liters,
                 "stress_score": s_score,
                 "has_exercise": has_ex,
-                "exercise_level": ex_level,
-                "exercise_duration": ex_duration,
-                "exercise_score": current_ex_score,
-                "exercise_detail": f"{ex_level} {ex_duration}p" if has_ex else "Không"
+                "exercise_score": ex_score,
+                "exercise_detail": ex_detail
             }
             st.session_state.health_submitted = True
             st.rerun()
@@ -254,11 +434,10 @@ def render_login():
                 success, user_info = verify_login(username, password)
                 if success:
                     st.session_state.is_logged_in = True
-                    # [QUAN TRỌNG] Load dữ liệu cũ vào user_data để HealthGate hiển thị lại
-                    # Nếu user mới thì để rỗng để nhập từ đầu
+
+                    # 1. Load dữ liệu từ Database (Code cũ)
                     st.session_state.user_data = user_info.get(
                         'daily_status', {})
-                    # Lưu thêm thông tin tài khoản để hiển thị tên
                     st.session_state.account_info = user_info.get(
                         'account', {})
                     st.session_state.db_grades = user_info.get(
@@ -269,35 +448,51 @@ def render_login():
                         'payment_subscription', {})
                     st.session_state.sys_settings = user_info.get(
                         'general_settings', {})
+
+                    # 2. [THÊM MỚI] LOGIC KÍCH HOẠT MODEL THEO HẠNG
+                    # Lấy hạng thành viên hiện tại
+                    current_tier = st.session_state.payment_data.get(
+                        'current_tier', 'Standard')
+
+                    # Map hạng thành viên sang Model tương ứng
+                    if "Legend" in current_tier:
+                        st.session_state.active_model = "Gemini 2.0 Flash Latest"  # Model VIP nhất
+                        st.session_state.bought_model_rank = 2
+                    elif "Artisan" in current_tier:
+                        st.session_state.active_model = "Gemini 3.0 Flash"  # Model cho Artisan
+                        st.session_state.bought_model_rank = 1
+                    else:
+                        st.session_state.active_model = "Gemini 2.5 Flash"  # Mặc định
+                        st.session_state.bought_model_rank = 0
+
+                    # Gửi thông báo chào mừng
+                    st.toast(
+                        f"Xin chào {username}! Đã kích hoạt model: {st.session_state.active_model}")
+
                     st.rerun()
                 else:
                     st.error("Sai thông tin đăng nhập!")
 
         with col2:
             st.markdown("### Khách truy cập")
-            st.info(
-                "Trải nghiệm nhanh các tính năng mà không cần lưu trữ dữ liệu lâu dài.")
+            st.info("Trải nghiệm nhanh các tính năng của app.")
             if st.button("👤 DÙNG THỬ (GUEST)", use_container_width=True):
-                # 1. Gọi hàm lấy dữ liệu Guest từ User_data.py
+                # 1. Lấy dữ liệu Guest
                 guest_data = get_guest_data()
-
-                # 2. Bật trạng thái đăng nhập
                 st.session_state.is_logged_in = True
 
-                # 3. [QUAN TRỌNG] Đưa toàn bộ ví tiền và sinh trắc của Guest vào Session
+                # 2. Load dữ liệu Guest
                 st.session_state.payment_data = guest_data.get(
                     'payment_subscription', {})
                 st.session_state.account_info = guest_data.get('account', {})
                 st.session_state.db_grades = guest_data.get(
                     'learning_results', {}).get('grades', [])
-
-                # Nạp thêm sinh trắc và cài đặt (để trang Settings không bị lỗi 0.0)
                 st.session_state.bio_data = guest_data.get(
                     'personalization', {}).get('biometrics', {})
                 st.session_state.sys_settings = guest_data.get(
                     'general_settings', {})
 
-                # 4. Tạo dữ liệu trạng thái hằng ngày mặc định (vì Guest thường chưa có daily_status)
+                # Xử lý daily_status cho Guest
                 if 'daily_status' not in guest_data:
                     st.session_state.user_data = {
                         "sleep_hours": 7.0, "sleep_quality": 4,
@@ -307,6 +502,10 @@ def render_login():
                 else:
                     st.session_state.user_data = guest_data.get(
                         'daily_status', {})
+
+                # 3. [THÊM MỚI] GUEST MẶC ĐỊNH DÙNG BẢN FREE
+                st.session_state.active_model = "Gemini 2.5 Flash"
+                st.session_state.bought_model_rank = 0
 
                 st.rerun()
 
@@ -352,59 +551,36 @@ else:
 
         # --- SIDEBAR CẢI TIẾN ---
         with st.sidebar:
+            st.divider()
             acc_info = st.session_state.get('account_info', {})
             pay_data = st.session_state.get('payment_data', {})
-
             username = acc_info.get('username', 'Guest')
             fair_coin = pay_data.get('fair_coin_balance', 0)
             tier = pay_data.get('current_tier', 'Standard')
-            with st.container(border=True):
-                st.markdown(f"**{username.upper()}**")
+            active_model = st.session_state.get(
+                'active_model', 'Gemini 2.5 Flash')
 
-                # Hiển thị số dư Fair Coin với icon
-                st.markdown(f"**Fair Coin** `{fair_coin}`")
+            with st.popover(f"👤 {username.upper()}"):
+                st.markdown(f"**Thông tin tài khoản**")
+                col_coin, col_tier = st.columns(
+                    [1, 1], vertical_alignment="center")
+                # Tạo khung hiển thị Coin giống style st.status
+                with col_coin:
+                    st.image("assets/fair-coin.png", width=100,
+                             caption=f"**{fair_coin}**")
+                with col_tier:
+                    st.markdown("# 🏅Hạng", text_alignment="center")
+                    st.markdown(f"`{tier}`", text_alignment="center")
 
-                # Hiển thị hạng thành viên,model (nhỏ gọn)
-                st.caption(f"Status: {tier}")
+                # Hiển thị Model AI đang sử dụng (Style bạn thích)
+                st.info(f"Đang kết nối: {active_model}")
+
+                st.caption("Dữ liệu được cập nhật thời gian thực")
             # 1. LOGIC TOAST
             if 'toast_msg' in st.session_state and st.session_state.toast_msg:
                 st.toast(st.session_state.toast_msg)
                 st.session_state.toast_msg = None
-
-            # 2. TRẠNG THÁI SỨC KHỎE (Code cũ giữ nguyên)
-            with st.expander("❤️ Trạng thái & Nước", expanded=False):
-                data = st.session_state.user_data  # Data này đã được HealthGate nạp
-
-                # Hiển thị Hydration
-                water_val = data.get('water_consumed', 0.0)
-                st.write(f"💧 Nước: **{water_val:.2f} Lít**")
-                target_water = 3.0
-                progress = min(water_val / target_water, 1.0)
-                st.progress(progress)
-
-                if progress >= 1.0:
-                    st.caption("✅ Đã đạt mục tiêu nước!")
-                else:
-                    st.caption(
-                        f"Thiếu {(target_water - water_val):.1f}L mục tiêu.")
-
-                st.divider()
-
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.write(f"🌙 Ngủ: **{data.get('sleep_hours', 0)}h**")
-                    st.caption(f"Q: {data.get('sleep_quality', 0)}/6")
-                with col_b:
-                    st.write(f"🧠 Stress: **{data.get('stress_score', 0)}/3**")
-                    st.caption(f"VĐ: {data.get('exercise_detail', 'Không')}")
-
-                st.divider()
-
-                # Nút cộng nước
-                if st.button("➕ Uống thêm 250ml (0.25L)", use_container_width=True):
-                    st.session_state.user_data['water_consumed'] = water_val + 0.25
-                    st.session_state.toast_msg = "Đã nạp thêm 0.25L nước! 💧"
-                    st.rerun()
-
-                if st.button("🏋️ Cập nhật Vận động", use_container_width=True):
-                    show_exercise_dialog()
+                st.session_state.temp_water_added = 0.0
+            # 2. TRẠNG THÁI SỨC KHỎE
+            if st.button("❤️ Trạng thái sức khỏe", use_container_width=True):
+                show_health_status_dialog()
