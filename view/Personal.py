@@ -31,7 +31,7 @@ def plot_radar_chart(data):
         theta=categories,
         fill='toself',
         name='Mục tiêu cân bằng',
-        line_color='lightgray',
+        line_color="#2E2E2E",
         opacity=0.4
     ))
 

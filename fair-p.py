@@ -1,16 +1,16 @@
 import streamlit as st
-from dotenv import load_dotenv
+# from dotenv import load_dotenv : no longer needed when deploy
 from data.User_Data.User_data import verify_login, get_guest_data
 from logic.calculations import calculate_single_activity_score
+
 # 1. Khởi động cấu hình
-load_dotenv()
+# load_dotenv() example for code
 
 st.set_page_config(
-    page_title="FAIR-P AI",
+    page_title="FAIR-P",
     page_icon="assets/fair-p_logo.png",
     layout="wide"
 )
-
 # --- 1. HÀM PHÂN LOẠI GIẤC NGỦ ---
 
 
@@ -434,11 +434,10 @@ def render_login():
                 success, user_info = verify_login(username, password)
                 if success:
                     st.session_state.is_logged_in = True
-                    # [QUAN TRỌNG] Load dữ liệu cũ vào user_data để HealthGate hiển thị lại
-                    # Nếu user mới thì để rỗng để nhập từ đầu
+
+                    # 1. Load dữ liệu từ Database (Code cũ)
                     st.session_state.user_data = user_info.get(
                         'daily_status', {})
-                    # Lưu thêm thông tin tài khoản để hiển thị tên
                     st.session_state.account_info = user_info.get(
                         'account', {})
                     st.session_state.db_grades = user_info.get(
@@ -449,35 +448,51 @@ def render_login():
                         'payment_subscription', {})
                     st.session_state.sys_settings = user_info.get(
                         'general_settings', {})
+
+                    # 2. [THÊM MỚI] LOGIC KÍCH HOẠT MODEL THEO HẠNG
+                    # Lấy hạng thành viên hiện tại
+                    current_tier = st.session_state.payment_data.get(
+                        'current_tier', 'Standard')
+
+                    # Map hạng thành viên sang Model tương ứng
+                    if "Legend" in current_tier:
+                        st.session_state.active_model = "Gemini 2.0 Flash Latest"  # Model VIP nhất
+                        st.session_state.bought_model_rank = 2
+                    elif "Artisan" in current_tier:
+                        st.session_state.active_model = "Gemini 3.0 Flash"  # Model cho Artisan
+                        st.session_state.bought_model_rank = 1
+                    else:
+                        st.session_state.active_model = "Gemini 2.5 Flash"  # Mặc định
+                        st.session_state.bought_model_rank = 0
+
+                    # Gửi thông báo chào mừng
+                    st.toast(
+                        f"Xin chào {username}! Đã kích hoạt model: {st.session_state.active_model}")
+
                     st.rerun()
                 else:
                     st.error("Sai thông tin đăng nhập!")
 
         with col2:
             st.markdown("### Khách truy cập")
-            st.info(
-                "Trải nghiệm nhanh các tính năng mà không cần lưu trữ dữ liệu lâu dài.")
+            st.info("Trải nghiệm nhanh các tính năng của app.")
             if st.button("👤 DÙNG THỬ (GUEST)", use_container_width=True):
-                # 1. Gọi hàm lấy dữ liệu Guest từ User_data.py
+                # 1. Lấy dữ liệu Guest
                 guest_data = get_guest_data()
-
-                # 2. Bật trạng thái đăng nhập
                 st.session_state.is_logged_in = True
 
-                # 3. [QUAN TRỌNG] Đưa toàn bộ ví tiền và sinh trắc của Guest vào Session
+                # 2. Load dữ liệu Guest
                 st.session_state.payment_data = guest_data.get(
                     'payment_subscription', {})
                 st.session_state.account_info = guest_data.get('account', {})
                 st.session_state.db_grades = guest_data.get(
                     'learning_results', {}).get('grades', [])
-
-                # Nạp thêm sinh trắc và cài đặt (để trang Settings không bị lỗi 0.0)
                 st.session_state.bio_data = guest_data.get(
                     'personalization', {}).get('biometrics', {})
                 st.session_state.sys_settings = guest_data.get(
                     'general_settings', {})
 
-                # 4. Tạo dữ liệu trạng thái hằng ngày mặc định (vì Guest thường chưa có daily_status)
+                # Xử lý daily_status cho Guest
                 if 'daily_status' not in guest_data:
                     st.session_state.user_data = {
                         "sleep_hours": 7.0, "sleep_quality": 4,
@@ -487,6 +502,10 @@ def render_login():
                 else:
                     st.session_state.user_data = guest_data.get(
                         'daily_status', {})
+
+                # 3. [THÊM MỚI] GUEST MẶC ĐỊNH DÙNG BẢN FREE
+                st.session_state.active_model = "Gemini 2.5 Flash"
+                st.session_state.bought_model_rank = 0
 
                 st.rerun()
 
@@ -551,7 +570,7 @@ else:
                              caption=f"**{fair_coin}**")
                 with col_tier:
                     st.markdown("# 🏅Hạng", text_alignment="center")
-                    st.markdown(f"`{tier}`")
+                    st.markdown(f"`{tier}`", text_alignment="center")
 
                 # Hiển thị Model AI đang sử dụng (Style bạn thích)
                 st.info(f"Đang kết nối: {active_model}")

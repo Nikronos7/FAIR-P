@@ -3,6 +3,3 @@ google-genai
 plotly
 pandas
 python-dotenv
-streamlit-extras
-streamlit-option-menu
-streamlit-antd-components

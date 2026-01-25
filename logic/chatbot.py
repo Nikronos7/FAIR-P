@@ -1,13 +1,22 @@
 import os
 from dotenv import load_dotenv
 from google import genai
+import streamlit as st
 
 load_dotenv()
 
 
 class ChatBotLogic:
     def __init__(self):
-        self.api_key = os.getenv("Chat_Bot")
+        # --- SỬA ĐOẠN NÀY ---
+        # Logic ưu tiên: Kiểm tra Secrets của Streamlit trước
+        # Nếu không có (đang chạy local), mới tìm trong biến môi trường
+
+        if "Chat_Bot" in st.secrets:
+            self.api_key = st.secrets["Chat_Bot"]  # Lấy từ Streamlit Cloud
+        else:
+            self.api_key = os.getenv("Chat_Bot")   # Lấy từ file .env (Local)
+
         self.client = None
         if self.api_key:
             try:
