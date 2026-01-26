@@ -252,7 +252,7 @@ def render_about_us():
         st.markdown("#### 🏢 HUMAN OS HUB HQ")
         st.write("📍 **Địa chỉ:** Đà Nẵng, Việt Nam")
         st.write("📧 **Email:** fairpproject@gmail.com")
-        st.write("🌐 **Website:** www.fair-p.ai")
+        st.write("🌐 **Website:** fair-p.streamlit.app")
         st.write("📞 **Hotline:** (+84) 905 xxx xxx")
 
         # Các nút mạng xã hội giả lập

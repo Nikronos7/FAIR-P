@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 import datetime
+import pytz
 import pandas as pd
 
 # --- IMPORT LOGIC ---
@@ -10,6 +11,11 @@ from logic.chatbot import chat_logic
 from logic.calculations import calculate_readiness, get_ai_mode, get_progress_data
 # 3. Prompts: Điều chỉnh logic theo sức khoẻ
 from logic.prompts import get_system_prompt
+
+# --- Xác định múi giờ vn ---
+vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+now_vn = datetime.datetime.now(vietnam_tz)
+current_hour = now_vn.hour
 
 # --- HÀM VẼ RADAR CHART ---
 
@@ -79,78 +85,115 @@ if selected == "Học tập":
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # --- 1. TÍNH TOÁN TRẠNG THÁI (SỨC KHỎE & MODEL) ---
+    # --- 1. CẤU HÌNH DỮ LIỆU & AVATAR ---
     user_data = st.session_state.get('user_data', {})
     readiness_score = calculate_readiness(user_data)
+    acc_info = st.session_state.get('account_info', {})
+    user_name = acc_info.get('username', 'Bạn')
 
-    # Tự động lấy Model xịn nhất và Persona theo Rank
+    # Lấy Mode AI (nhưng dùng chung 1 Avatar Bot)
     ai_name, ai_color, active_model_id = get_ai_mode(readiness_score)
     st.session_state.active_model = ai_name
 
-    # --- 2. LẤY DỮ LIỆU TỪ GIỎ HÀNG KIẾN THỨC ---
-    # Đây là bước quan trọng để kết nối với trang Skills.py
+    # [CẤU HÌNH AVATAR CỐ ĐỊNH]
+    # Avatar User: Hình mầm cây/cỏ lá (Tượng trưng cho sự phát triển)
+    user_avatar = "https://cdn-icons-png.flaticon.com/512/628/628283.png"
+    # Avatar Chatbot: Robot cố định
+    bot_avatar = "https://cdn-icons-png.flaticon.com/512/4712/4712035.png"
+
     active_skills_cart = st.session_state.get('active_skills', [])
 
-    # Hiển thị thông báo nhỏ nếu đang có kỹ năng được nạp (UX)
     if active_skills_cart:
         skill_titles = ", ".join([s['title'] for s in active_skills_cart])
         st.caption(f"⚡ **AI đang được nạp kiến thức:** {skill_titles}")
 
-    # --- 3. GIAO DIỆN CHAT ---
+    # --- 2. KHUNG CHAT & LOGIC HIỂN THỊ ---
     chat_container = st.container(height=450, border=True)
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
 
-    # --- 4. XỬ LÝ INPUT & PROMPT ENGINEERING ---
+    # [FIX QUAN TRỌNG] Tạo một placeholder để chứa màn hình Welcome
+    welcome_placeholder = chat_container.empty()
+
+    # A. NẾU ĐÃ CÓ LỊCH SỬ -> HIỂN THỊ NGAY TRONG CONTAINER
+    if st.session_state.messages:
+        with chat_container:
+            for message in st.session_state.messages:
+                # Chọn avatar dựa trên role
+                avt = user_avatar if message["role"] == "user" else bot_avatar
+                with st.chat_message(message["role"], avatar=avt):
+                    st.markdown(message["content"])
+
+    # B. NẾU CHƯA CÓ LỊCH SỬ -> HIỂN THỊ WELCOME VÀO PLACEHOLDER
+    else:
+        with welcome_placeholder.container():
+            st.markdown(f"""
+                <div style="text-align: center; margin-top: 50px;">
+                    <h1 style="color: #E0E0E0;">Xin chào, {user_name}! 👋</h1>
+                    <p style="color: gray; font-size: 1.2em;">Mình là <b>{ai_name}</b>. Hôm nay chúng ta sẽ chinh phục điều gì?</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Gợi ý (Suggestion Chips) - 4 nội dung bao quát hệ sinh thái FAIR-P
+            st.write("")
+            col_s1, col_s2 = st.columns(2)
+
+            with col_s1:
+                # Gợi ý 1: Chuyên cho Coach (Chiến lược)
+                st.info(
+                    "📚 **Advanced Math:**\n'Chứng minh đạo hàm của hàm hợp và cho mình 1 bài tập thử thách.'")
+                # Gợi ý 2: Chuyên cho Caregiver (Chăm sóc)
+                st.info(
+                    "🍵 **Mindful Learning:**\n'Mình đang bị burn-out, hãy thiết kế buổi học 30p ít áp lực nhất.'")
+
+            with col_s2:
+                # Gợi ý 3: Chuyên cho Tutor (Gia sư)
+                st.info(
+                    "💻 **AI Engineering:**\n'Giải thích cơ chế Attention trong Transformer bằng ngôn ngữ dễ hiểu.'")
+                # Gợi ý 4: Kỹ năng đầu ra (IELTS/SAT)
+                st.info(
+                    "✍️ **IELTS Writing:**\n'Phân tích lỗi logic trong bài luận này và giúp mình nâng band từ vựng.'")
+
+    # --- 3. XỬ LÝ INPUT (FIX LỖI GỬI 2 LẦN) ---
     if prompt := st.chat_input(f"Hỏi {ai_name}..."):
-        # A. Hiển thị tin nhắn người dùng
+        # [FIX] Xóa màn hình Welcome ngay lập tức khi nhấn Enter
+        welcome_placeholder.empty()
+
+        # 1. Hiển thị tin nhắn User ngay lập tức
         st.session_state.messages.append({"role": "user", "content": prompt})
         with chat_container:
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar=user_avatar):
                 st.markdown(prompt)
 
-            # B. Xử lý phía AI
-            with st.chat_message("assistant"):
-                # Tạo hiệu ứng "đang suy nghĩ" chuyên nghiệp
+            # 2. Xử lý phía AI
+            with st.chat_message("assistant", avatar=bot_avatar):
                 with st.status(f"🚀 {ai_name} đang phân tích...", state="running", expanded=False) as status:
                     st.write(f"🧠 **Model:** `{active_model_id}`")
                     st.write(f"❤️ **Sức khỏe User:** {readiness_score}/100")
 
                     if active_skills_cart:
                         st.write(
-                            f"📚 **Kỹ năng vận dụng:** {len(active_skills_cart)} module")
+                            f"📚 **Kỹ năng:** {len(active_skills_cart)} module")
 
-                    # [LOGIC CỐT LÕI] Tạo System Prompt
-                    # Lấy tên user
-                    acc_info = st.session_state.get('account_info', {})
-                    user_name = acc_info.get('username', 'Bạn')
-
-                    # Gọi hàm get_system_prompt với đầy đủ 4 tham số
+                    # Lấy System Prompt
                     system_instruction = get_system_prompt(
                         readiness_score=readiness_score,
                         model_id=active_model_id,
                         username=user_name,
-                        active_skills=active_skills_cart  # <--- QUAN TRỌNG: Truyền giỏ hàng vào đây
+                        active_skills=active_skills_cart
                     )
 
-                    # Ghép kịch bản vào câu hỏi
                     full_prompt_to_ai = f"{system_instruction}\n\n---\nUser Input: {prompt}"
 
-                    st.write("✅ Đã xây dựng xong ngữ cảnh.")
-
-                    # Gọi API lấy câu trả lời
+                    # Gọi API
                     response = chat_logic.get_response(
                         full_prompt_to_ai, model_id=active_model_id)
 
                     status.update(
                         label=f"✅ {ai_name} đã trả lời", state="complete")
 
-                # C. Hiển thị câu trả lời của AI
+                # Hiển thị kết quả AI
                 st.markdown(response)
 
-        # D. Lưu tin nhắn Bot vào session
+        # 3. Lưu tin nhắn AI vào session
         st.session_state.messages.append(
             {"role": "assistant", "content": response})
 # ==================================================
@@ -170,7 +213,6 @@ elif selected == "Dashboard":
 
     with head_col1:
         # --- LOGIC THỜI GIAN (Dùng thư viện datetime) ---
-        current_hour = datetime.datetime.now().hour
         if 5 <= current_hour < 11:
             greeting = "Chào buổi sáng"
         elif 11 <= current_hour < 14:
